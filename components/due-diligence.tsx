@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useAuth } from "@/hooks/use-auth"
 import { useVerification } from "@/contexts/verification-context"
 import { PersonaKYC } from "@/components/persona-kyc"
+import { AIDueDiligence } from "@/components/ai-due-diligence"
 import {
   FileText,
   Download,
@@ -230,6 +231,9 @@ export function DueDiligence({ selectedDocument, onDocumentSelect }: DueDiligenc
             </div>
           </div>
         </Card>
+
+        {/* AI Due Diligence */}
+        <AIDueDiligence />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
