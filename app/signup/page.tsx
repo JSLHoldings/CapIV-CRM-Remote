@@ -28,7 +28,8 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [accountType, setAccountType] = useState<AccountType | "">("")
   const [error, setError] = useState("")
-  const { signup, isLoading } = useAuth()
+  const [submitted, setSubmitted] = useState(false)
+  const { signup, user, isLoading } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -52,10 +53,45 @@ export default function SignupPage() {
 
     const success = await signup(email, password, name, accountType as AccountType)
     if (success) {
-      router.push("/")
+      // If email confirmation is disabled, a session exists immediately.
+      if (user) {
+        router.push("/")
+      } else {
+        // Otherwise, prompt the user to confirm their email.
+        setSubmitted(true)
+      }
     } else {
-      setError("Failed to create account. Please try again.")
+      setError("Failed to create account. This email may already be registered.")
     }
+  }
+
+  if (submitted) {
+    return (
+      <PublicRoute>
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md space-y-8">
+            <div className="text-center space-y-2">
+              <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">CapIV™ Access</p>
+              <h1 className="text-3xl font-semibold text-white">Check your email</h1>
+            </div>
+            <Card className="bg-slate-900/80 border border-slate-800 shadow-xl shadow-blue-500/5">
+              <CardHeader>
+                <CardTitle className="text-white">Confirm your account</CardTitle>
+                <CardDescription className="text-slate-400">
+                  We sent a confirmation link to <span className="text-slate-200">{email}</span>. Click the link to
+                  activate your account, then sign in.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button asChild className="w-full bg-blue-600 hover:bg-blue-500 text-white">
+                  <Link href="/login">Go to Sign In</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </PublicRoute>
+    )
   }
 
   const accountOptions: Array<{ id: AccountType; title: string; description: string }> = [

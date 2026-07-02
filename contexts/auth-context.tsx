@@ -1,7 +1,9 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect, useCallback } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react"
+import { createClient } from "@/lib/supabase/client"
+import type { Session } from "@supabase/supabase-js"
 
 export type AccountType =
   | "realtor-broker"
@@ -31,192 +33,122 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const SESSION_DURATION = 24 * 60 * 60 * 1000 // 24 hours
-const REMEMBER_ME_DURATION = 30 * 24 * 60 * 60 * 1000 // 30 days
-const SESSION_WARNING_TIME = 5 * 60 * 1000 // 5 minutes before expiry
-const INACTIVITY_TIMEOUT = 30 * 60 * 1000 // 30 minutes
+// Build our app-level User object from a Supabase session's user + metadata.
+function mapSessionToUser(session: Session | null): User | null {
+  if (!session?.user) return null
+  const supaUser = session.user
+  const metadata = supaUser.user_metadata ?? {}
+  return {
+    id: supaUser.id,
+    email: supaUser.email ?? "",
+    name: (metadata.name as string) || supaUser.email?.split("@")[0] || "",
+    role: (metadata.role as "admin" | "user") || "user",
+    accountType: (metadata.account_type as AccountType) || undefined,
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
+
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [sessionExpiry, setSessionExpiry] = useState<Date | null>(null)
   const [isSessionExpired, setIsSessionExpired] = useState(false)
-  const [lastActivity, setLastActivity] = useState<Date>(new Date())
 
-  const validateSession = useCallback(() => {
-    const now = new Date()
-    if (sessionExpiry && now > sessionExpiry) {
-      setIsSessionExpired(true)
-      logout()
-      return false
-    }
-    return true
-  }, [sessionExpiry])
-
-  const updateActivity = useCallback(() => {
-    setLastActivity(new Date())
-  }, [])
-
-  const refreshSession = useCallback(async (): Promise<boolean> => {
-    if (!user) return false
-
-    try {
-      // Simulate API call to refresh session
-      await new Promise((resolve) => setTimeout(resolve, 500))
-
-      const newExpiry = new Date(Date.now() + SESSION_DURATION)
-      setSessionExpiry(newExpiry)
-      localStorage.setItem("auth-session-expiry", newExpiry.toISOString())
+  const applySession = useCallback((session: Session | null) => {
+    setUser(mapSessionToUser(session))
+    if (session?.expires_at) {
+      setSessionExpiry(new Date(session.expires_at * 1000))
       setIsSessionExpired(false)
-
-      return true
-    } catch (error) {
-      console.error("Failed to refresh session:", error)
-      return false
+    } else {
+      setSessionExpiry(null)
     }
-  }, [user])
-
-  useEffect(() => {
-    // Check for existing session on mount
-    const savedUser = localStorage.getItem("auth-user")
-    const savedExpiry = localStorage.getItem("auth-session-expiry")
-
-    if (savedUser && savedExpiry) {
-      const expiryDate = new Date(savedExpiry)
-      const now = new Date()
-
-      if (now < expiryDate) {
-        setUser(JSON.parse(savedUser))
-        setSessionExpiry(expiryDate)
-      } else {
-        // Session expired, clean up
-        localStorage.removeItem("auth-user")
-        localStorage.removeItem("auth-session-expiry")
-        setIsSessionExpired(true)
-      }
-    }
-    setIsLoading(false)
   }, [])
 
   useEffect(() => {
-    if (!user || !sessionExpiry) return
+    let mounted = true
 
-    const checkSession = () => {
-      const now = new Date()
-      const timeUntilExpiry = sessionExpiry.getTime() - now.getTime()
+    // Load the current session on mount.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return
+      applySession(session)
+      setIsLoading(false)
+    })
 
-      // Check for inactivity
-      const timeSinceActivity = now.getTime() - lastActivity.getTime()
-      if (timeSinceActivity > INACTIVITY_TIMEOUT) {
-        logout()
-        return
-      }
-
-      // Warn about upcoming expiry
-      if (timeUntilExpiry <= SESSION_WARNING_TIME && timeUntilExpiry > 0) {
-        // Could show a warning toast here
-        console.log("[v0] Session expiring soon")
-      }
-
-      // Check if session expired
-      if (timeUntilExpiry <= 0) {
-        setIsSessionExpired(true)
-        logout()
-      }
-    }
-
-    const interval = setInterval(checkSession, 60000) // Check every minute
-    return () => clearInterval(interval)
-  }, [user, sessionExpiry, lastActivity])
-
-  useEffect(() => {
-    if (!user) return
-
-    const handleActivity = () => updateActivity()
-
-    // Listen for user activity
-    const events = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click"]
-    events.forEach((event) => {
-      document.addEventListener(event, handleActivity, true)
+    // Keep auth state in sync (login, logout, token refresh, tab focus).
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      applySession(session)
+      setIsLoading(false)
     })
 
     return () => {
-      events.forEach((event) => {
-        document.removeEventListener(event, handleActivity, true)
-      })
+      mounted = false
+      subscription.unsubscribe()
     }
-  }, [user, updateActivity])
+  }, [supabase, applySession])
 
-  const login = async (email: string, password: string, rememberMe = false): Promise<boolean> => {
+  const refreshSession = useCallback(async (): Promise<boolean> => {
+    const { data, error } = await supabase.auth.refreshSession()
+    if (error || !data.session) {
+      console.error("Failed to refresh session:", error?.message)
+      return false
+    }
+    applySession(data.session)
+    return true
+  }, [supabase, applySession])
+
+  const login = async (email: string, password: string, _rememberMe = false): Promise<boolean> => {
     setIsLoading(true)
-
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    if (email && password.length >= 6) {
-      const mockUser: User = {
-        id: "1",
-        email,
-        name: email.split("@")[0],
-        role: "user",
-      }
-
-      const sessionDuration = rememberMe ? REMEMBER_ME_DURATION : SESSION_DURATION
-      const expiry = new Date(Date.now() + sessionDuration)
-
-      setUser(mockUser)
-      setSessionExpiry(expiry)
-      setIsSessionExpired(false)
-      setLastActivity(new Date())
-
-      localStorage.setItem("auth-user", JSON.stringify(mockUser))
-      localStorage.setItem("auth-session-expiry", expiry.toISOString())
-
-      setIsLoading(false)
-      return true
-    }
-
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     setIsLoading(false)
-    return false
+
+    if (error || !data.session) {
+      console.error("Login failed:", error?.message)
+      return false
+    }
+    applySession(data.session)
+    return true
   }
 
   const signup = async (email: string, password: string, name: string, accountType: AccountType): Promise<boolean> => {
     setIsLoading(true)
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo:
+          process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
+          (typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined),
+        data: {
+          name,
+          account_type: accountType,
+          role: "user",
+        },
+      },
+    })
+    setIsLoading(false)
 
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    if (email && password.length >= 6 && name && accountType) {
-      const mockUser: User = {
-        id: Date.now().toString(),
-        email,
-        name,
-        role: "user",
-        accountType,
-      }
-
-      const expiry = new Date(Date.now() + SESSION_DURATION)
-
-      setUser(mockUser)
-      setSessionExpiry(expiry)
-      setIsSessionExpired(false)
-      setLastActivity(new Date())
-
-      localStorage.setItem("auth-user", JSON.stringify(mockUser))
-      localStorage.setItem("auth-session-expiry", expiry.toISOString())
-
-      setIsLoading(false)
-      return true
+    if (error) {
+      console.error("Signup failed:", error.message)
+      return false
     }
 
-    setIsLoading(false)
-    return false
+    // If email confirmation is disabled, a session is returned immediately.
+    if (data.session) {
+      applySession(data.session)
+    }
+    return true
   }
 
   const logout = () => {
+    supabase.auth.signOut()
     setUser(null)
     setSessionExpiry(null)
     setIsSessionExpired(false)
-    localStorage.removeItem("auth-user")
-    localStorage.removeItem("auth-session-expiry")
   }
 
   return (
