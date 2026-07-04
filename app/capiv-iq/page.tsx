@@ -1,12 +1,12 @@
 "use client"
 
-import { useMemo } from "react"
+import { Suspense, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 import { ProtectedRoute } from "@/components/protected-route"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { CapIVIQWorkspace } from "@/components/capiv-iq"
 
-export default function CapIVIQPage() {
+function CapIVIQContent() {
   const searchParams = useSearchParams()
   const tab = useMemo(() => {
     const value = searchParams?.get("tab")
@@ -15,10 +15,16 @@ export default function CapIVIQPage() {
     return "due-diligence"
   }, [searchParams])
 
+  return <CapIVIQWorkspace defaultTab={tab} />
+}
+
+export default function CapIVIQPage() {
   return (
     <ProtectedRoute>
       <DashboardShell>
-        <CapIVIQWorkspace defaultTab={tab} />
+        <Suspense fallback={null}>
+          <CapIVIQContent />
+        </Suspense>
       </DashboardShell>
     </ProtectedRoute>
   )
