@@ -23,7 +23,12 @@ interface User {
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string, rememberMe?: boolean) => Promise<boolean>
-  signup: (email: string, password: string, name: string, accountType: AccountType) => Promise<boolean>
+  signup: (
+    email: string,
+    password: string,
+    name: string,
+    accountType: AccountType,
+  ) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   isLoading: boolean
   sessionExpiry: Date | null
@@ -118,27 +123,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return true
   }
 
-  const signup = async (email: string, password: string, name: string, accountType: AccountType): Promise<boolean> => {
+  const signup = async (
+    email: string,
+    password: string,
+    name: string,
+    accountType: AccountType,
+  ): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true)
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo:
-          process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
-          (typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined),
-        data: {
-          name,
-          account_type: accountType,
-          role: "user",
-        },
-      },
-    })
-    setIsLoading(false)
 
-    if (error) {
-      console.error("Signup failed:", error.message)
-      return false
+    // Create the account server-side via the Admin API (auto-confirmed, no
+    // email sent). This avoids Supabase's built-in email rate limit.
+    let res: Response
+    try {
+      res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name, accountType }),
+      })
+    } catch {
+      setIsLoading(false)
+      return { success: false, error: "Network error. Please try again." }
+    }
+
+    if (!res.ok) {
+      setIsLoading(false)
+      const payload = await res.json().catch(() => ({}))
+      return { success: false, error: payload.error || "Failed to create account. Please try again." }
     }
 
     // Mark that this is a brand-new account so the onboarding/verification flow
@@ -147,11 +157,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem("capiv_just_signed_up", "true")
     }
 
-    // If email confirmation is disabled, a session is returned immediately.
-    if (data.session) {
-      applySession(data.session)
+    // Sign in immediately to establish a session.
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    setIsLoading(false)
+
+    if (error || !data.session) {
+      console.error("[v0] Post-signup sign-in failed:", error?.message)
+      return { success: false, error: "Account created, but sign-in failed. Please sign in manually." }
     }
-    return true
+
+    applySession(data.session)
+    return { success: true }
   }
 
   const logout = () => {
