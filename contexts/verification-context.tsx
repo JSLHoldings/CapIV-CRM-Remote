@@ -1,7 +1,8 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react"
 import { useAuth } from "@/contexts/auth-context"
+import { createClient } from "@/lib/supabase/client"
 
 export interface DocumentUpload {
   name: string
@@ -93,6 +94,7 @@ interface VerificationContextType {
   kycCompleted: boolean
   kycInquiryId: string | null
   companyInfo: CompanyInfo | null
+  isLoading: boolean
   signNDA: (signature: string) => void
   completeKYC: (inquiryId: string) => void
   submitCompanyInfo: (info: CompanyInfo) => void
@@ -101,127 +103,131 @@ interface VerificationContextType {
 
 export const VerificationContext = createContext<VerificationContextType | undefined>(undefined)
 
-const initialCompanyInfo: CompanyInfo = {
-  companyName: "",
-  entityType: "",
-  registrationNumber: "",
-  taxId: "",
-  incorporationDate: "",
-  jurisdiction: "",
-  businessAddress: "",
-  city: "",
-  state: "",
-  zipCode: "",
-  country: "",
-  phoneNumber: "",
-  website: "",
-  primaryContactName: "",
-  primaryContactTitle: "",
-  primaryContactEmail: "",
-  primaryContactPhone: "",
-  businessDescription: "",
-  dealInvestmentFocus: [],
-  investmentStrategy: "",
-  typicalDealSize: "",
-  geographicFocus: [],
-  preferredAssetClasses: [],
-  investmentHorizon: "",
-  fundingSource: "",
-  regulatoryLicenses: "",
-  complianceOfficer: "",
-  complianceOfficerEmail: "",
-  initialKycNotes: "",
-  digitalFileRepositoryNotes: "",
-  initialKycConfirmed: false,
-  digitalFileUploadReady: false,
-  kycDocumentUploads: [],
-  electronicSignature: "",
+// Verification progress is stored in the `profiles` table so it persists
+// across devices and sessions. These are the columns we read/write.
+interface VerificationRow {
+  is_verified: boolean | null
+  verification_step: string | null
+  nda_signed: boolean | null
+  kyc_completed: boolean | null
+  kyc_inquiry_id: string | null
+  company_info: CompanyInfo | null
 }
 
 export function VerificationProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
+
   const [isVerified, setIsVerified] = useState(false)
   const [currentStep, setCurrentStep] = useState<"nda" | "survey" | "complete">("nda")
   const [ndaSigned, setNdaSigned] = useState(false)
   const [kycCompleted, setKycCompleted] = useState(false)
   const [kycInquiryId, setKycInquiryId] = useState<string | null>(null)
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
+  // Load verification state from the database whenever the user changes.
   useEffect(() => {
-    if (user) {
-      const storageKey = `verification-${user.id}`
-      const saved = localStorage.getItem(storageKey)
-      if (saved) {
-        const data = JSON.parse(saved)
-        setIsVerified(data.isVerified || false)
-        const savedStep = data.currentStep
-        if (savedStep === "kyc") {
-          setCurrentStep("survey")
-        } else if (savedStep === "nda" || savedStep === "survey" || savedStep === "complete") {
-          setCurrentStep(savedStep)
-        } else {
-          setCurrentStep("nda")
-        }
-        setNdaSigned(data.ndaSigned || false)
-        setKycCompleted(data.kycCompleted || false)
-        setKycInquiryId(data.kycInquiryId || null)
-        setCompanyInfo(data.companyInfo || null)
-      }
-    } else {
-      // Reset verification state when user logs out
+    let active = true
+
+    if (!user) {
+      // Clear state when the user logs out.
       setIsVerified(false)
       setCurrentStep("nda")
       setNdaSigned(false)
       setKycCompleted(false)
       setKycInquiryId(null)
       setCompanyInfo(null)
+      setIsLoading(false)
+      return
     }
-  }, [user])
 
-  useEffect(() => {
-    if (user) {
-      const storageKey = `verification-${user.id}`
-      const data = {
-        isVerified,
-        currentStep,
-        ndaSigned,
-        kycCompleted,
-        kycInquiryId,
-        companyInfo,
+    setIsLoading(true)
+    supabase
+      .from("profiles")
+      .select("is_verified, verification_step, nda_signed, kyc_completed, kyc_inquiry_id, company_info")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data, error }: { data: VerificationRow | null; error: { message: string } | null }) => {
+        if (!active) return
+        if (error) {
+          console.error("Failed to load verification state:", error.message)
+        }
+        if (data) {
+          setIsVerified(data.is_verified ?? false)
+          const step = data.verification_step
+          setCurrentStep(step === "survey" || step === "complete" ? step : "nda")
+          setNdaSigned(data.nda_signed ?? false)
+          setKycCompleted(data.kyc_completed ?? false)
+          setKycInquiryId(data.kyc_inquiry_id ?? null)
+          setCompanyInfo(data.company_info ?? null)
+        }
+        setIsLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [user, supabase])
+
+  // Persist a partial update to the user's profile row.
+  const persist = useCallback(
+    async (updates: Partial<VerificationRow>) => {
+      if (!user) return
+      const { error } = await supabase.from("profiles").update(updates).eq("id", user.id)
+      if (error) {
+        console.error("Failed to persist verification state:", error.message)
       }
-      localStorage.setItem(storageKey, JSON.stringify(data))
-    }
-  }, [user, isVerified, currentStep, ndaSigned, kycCompleted, kycInquiryId, companyInfo])
+    },
+    [user, supabase],
+  )
 
-  const signNDA = (signature: string) => {
-    setNdaSigned(true)
-    setCurrentStep("survey")
-  }
+  const signNDA = useCallback(
+    (_signature: string) => {
+      setNdaSigned(true)
+      setCurrentStep("survey")
+      void persist({ nda_signed: true, verification_step: "survey" })
+    },
+    [persist],
+  )
 
-  const completeKYC = (inquiryId: string) => {
-    setKycCompleted(true)
-    setKycInquiryId(inquiryId)
-    setCurrentStep("survey")
-  }
+  const completeKYC = useCallback(
+    (inquiryId: string) => {
+      setKycCompleted(true)
+      setKycInquiryId(inquiryId)
+      setCurrentStep("survey")
+      void persist({ kyc_completed: true, kyc_inquiry_id: inquiryId, verification_step: "survey" })
+    },
+    [persist],
+  )
 
-  const submitCompanyInfo = (info: CompanyInfo) => {
-    setCompanyInfo(info)
-    setCurrentStep("complete")
-    setIsVerified(true)
-  }
+  const submitCompanyInfo = useCallback(
+    (info: CompanyInfo) => {
+      setCompanyInfo(info)
+      setCurrentStep("complete")
+      setIsVerified(true)
+      void persist({ company_info: info, verification_step: "complete", is_verified: true })
+    },
+    [persist],
+  )
 
-  const resetVerification = () => {
+  const resetVerification = useCallback(() => {
     setIsVerified(false)
     setCurrentStep("nda")
     setNdaSigned(false)
     setKycCompleted(false)
     setKycInquiryId(null)
     setCompanyInfo(null)
-    if (user) {
-      const storageKey = `verification-${user.id}`
-      localStorage.removeItem(storageKey)
-    }
-  }
+    void persist({
+      is_verified: false,
+      verification_step: "nda",
+      nda_signed: false,
+      kyc_completed: false,
+      kyc_inquiry_id: null,
+      company_info: null,
+    })
+  }, [persist])
 
   return (
     <VerificationContext.Provider
@@ -232,6 +238,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
         kycCompleted,
         kycInquiryId,
         companyInfo,
+        isLoading,
         signNDA,
         completeKYC,
         submitCompanyInfo,
