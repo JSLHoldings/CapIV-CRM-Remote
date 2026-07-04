@@ -110,6 +110,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Login failed:", error?.message)
       return false
     }
+    // Signing in is NOT a sign-up: never trigger the onboarding flow on login.
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("capiv_just_signed_up")
+    }
     applySession(data.session)
     return true
   }
@@ -137,6 +141,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
+    // Mark that this is a brand-new account so the onboarding/verification flow
+    // is shown once, right after sign-up (never on subsequent sign-ins).
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("capiv_just_signed_up", "true")
+    }
+
     // If email confirmation is disabled, a session is returned immediately.
     if (data.session) {
       applySession(data.session)
@@ -146,6 +156,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     supabase.auth.signOut()
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("capiv_just_signed_up")
+    }
     setUser(null)
     setSessionExpiry(null)
     setIsSessionExpired(false)
