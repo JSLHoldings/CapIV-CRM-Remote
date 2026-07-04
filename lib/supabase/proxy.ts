@@ -36,10 +36,13 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname.startsWith("/auth")
+  // API routes manage their own auth and must never be redirected to /login,
+  // otherwise POSTs (e.g. /api/auth/signup) get bounced before they run.
+  const isApiRoute = pathname.startsWith("/api")
 
   // If the user is not logged in and is trying to access a protected page,
   // redirect them to the login page.
-  if (!user && !isAuthPage) {
+  if (!user && !isAuthPage && !isApiRoute) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
