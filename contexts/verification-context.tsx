@@ -12,6 +12,13 @@ export interface DocumentUpload {
   uploadedAt: string
 }
 
+export interface CompanyContact {
+  name: string
+  title: string
+  email: string
+  phone: string
+}
+
 export interface CompanyInfo {
   // Common fields
   companyName: string
@@ -31,6 +38,8 @@ export interface CompanyInfo {
   primaryContactTitle: string
   primaryContactEmail: string
   primaryContactPhone: string
+  // Full list of company contacts (first entry is the primary contact).
+  contacts: CompanyContact[]
   businessDescription: string
 
   // Realtor/Broker specific
@@ -95,7 +104,7 @@ interface VerificationContextType {
   kycInquiryId: string | null
   companyInfo: CompanyInfo | null
   isLoading: boolean
-  signNDA: (signature: string) => void
+  signNDA: (signatureName: string, signatureImage: string) => void
   completeKYC: (inquiryId: string) => void
   submitCompanyInfo: (info: CompanyInfo) => void
   resetVerification: () => void
@@ -112,6 +121,9 @@ interface VerificationRow {
   kyc_completed: boolean | null
   kyc_inquiry_id: string | null
   company_info: CompanyInfo | null
+  nda_signature?: string | null
+  nda_signature_name?: string | null
+  nda_signed_at?: string | null
 }
 
 export function VerificationProvider({ children }: { children: ReactNode }) {
@@ -184,10 +196,16 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
   )
 
   const signNDA = useCallback(
-    (_signature: string) => {
+    (signatureName: string, signatureImage: string) => {
       setNdaSigned(true)
       setCurrentStep("survey")
-      void persist({ nda_signed: true, verification_step: "survey" })
+      void persist({
+        nda_signed: true,
+        verification_step: "survey",
+        nda_signature: signatureImage,
+        nda_signature_name: signatureName,
+        nda_signed_at: new Date().toISOString(),
+      })
     },
     [persist],
   )

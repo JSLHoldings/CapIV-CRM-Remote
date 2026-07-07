@@ -10,11 +10,13 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useVerification } from "@/contexts/verification-context"
+import { SignaturePad } from "@/components/signature-pad"
 import { FileText, Shield } from "lucide-react"
 
 export function NDASigningComponent() {
   const { signNDA } = useVerification()
-  const [signature, setSignature] = useState("")
+  const [signatureName, setSignatureName] = useState("")
+  const [signatureImage, setSignatureImage] = useState("")
   const [agreed, setAgreed] = useState(false)
   const [error, setError] = useState("")
 
@@ -27,12 +29,17 @@ export function NDASigningComponent() {
       return
     }
 
-    if (!signature.trim()) {
-      setError("Please provide your signature")
+    if (!signatureName.trim()) {
+      setError("Please type your full legal name")
       return
     }
 
-    signNDA(signature)
+    if (!signatureImage) {
+      setError("Please draw your signature in the box above")
+      return
+    }
+
+    signNDA(signatureName, signatureImage)
   }
 
   return (
@@ -50,6 +57,13 @@ export function NDASigningComponent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Placeholder notice: legal copy below is placeholder text pending final review. */}
+          <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3">
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              Placeholder agreement text. The final NDA language will be provided by JSL legal before launch.
+            </p>
+          </div>
+
           {/* NDA Content */}
           <div className="border rounded-lg p-4 bg-muted/30">
             <div className="flex items-center gap-2 mb-4">
@@ -145,16 +159,21 @@ export function NDASigningComponent() {
           {/* Signature Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="signature">Electronic Signature *</Label>
+              <Label htmlFor="signatureName">Full Legal Name *</Label>
               <Input
-                id="signature"
+                id="signatureName"
                 placeholder="Type your full legal name"
-                value={signature}
-                onChange={(e) => setSignature(e.target.value)}
+                value={signatureName}
+                onChange={(e) => setSignatureName(e.target.value)}
                 className="text-lg"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Draw Your Signature *</Label>
+              <SignaturePad onChange={setSignatureImage} />
               <p className="text-xs text-muted-foreground">
-                By typing your name, you are providing a legally binding electronic signature.
+                Draw your signature above and type your legal name to provide a legally binding electronic signature.
               </p>
             </div>
 
