@@ -1,515 +1,393 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Calculator as CalculatorIcon, BarChart3, DollarSign, TrendingUp, Percent, LineChart } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Button } from "@/components/ui/button"
-import { PortfolioAnalysis } from "@/components/portfolio-analysis"
+import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CheckCircle2, XCircle, AlertCircle, Settings, Lock, LogOut, Shield } from "lucide-react"
 
-type EQTab = "calculator" | "portfolio"
+type EQTab = "governance" | "rules" | "decisions" | "overrides"
 
-interface CapIVEQWorkspaceProps {
-  defaultTab?: EQTab
+interface GovernanceRule {
+  id: string
+  name: string
+  category: "source" | "asset" | "jurisdiction" | "risk"
+  condition: string
+  action: "allow" | "reject" | "conditional"
+  priority: number
 }
 
-export function CapIVEQWorkspace({ defaultTab = "calculator" }: CapIVEQWorkspaceProps) {
+interface CapitalDecision {
+  id: string
+  capital: string
+  source: string
+  assetClass: string
+  jurisdiction: string
+  riskLevel: string
+  status: "approved" | "rejected" | "conditional"
+  reason: string
+  timestamp: string
+}
+
+interface Override {
+  id: string
+  decision: string
+  authority: string
+  reason: string
+  approvedBy: string
+  timestamp: string
+}
+
+const mockRules: GovernanceRule[] = [
+  {
+    id: "rule-1",
+    name: "Accredited Investor Only",
+    category: "source",
+    condition: "Source must be accredited investor",
+    action: "conditional",
+    priority: 1,
+  },
+  {
+    id: "rule-2",
+    name: "No High-Risk Assets in Core Portfolio",
+    category: "asset",
+    condition: "Asset class must not exceed 30% risk rating",
+    action: "reject",
+    priority: 2,
+  },
+  {
+    id: "rule-3",
+    name: "US Jurisdictions Only",
+    category: "jurisdiction",
+    condition: "Capital deployment limited to US jurisdictions",
+    action: "allow",
+    priority: 1,
+  },
+]
+
+const mockDecisions: CapitalDecision[] = [
+  {
+    id: "dec-1",
+    capital: "$2.5M",
+    source: "Institutional Fund A",
+    assetClass: "Real Estate",
+    jurisdiction: "California",
+    riskLevel: "Medium",
+    status: "approved",
+    reason: "Meets all governance criteria. Accredited source, domestic jurisdiction, acceptable risk profile.",
+    timestamp: "2 days ago",
+  },
+  {
+    id: "dec-2",
+    capital: "$850K",
+    source: "Individual Investor B",
+    assetClass: "Private Equity",
+    jurisdiction: "Delaware",
+    riskLevel: "High",
+    status: "conditional",
+    reason: "High-risk asset class. Conditional approval pending risk mitigation documentation.",
+    timestamp: "1 day ago",
+  },
+]
+
+const mockOverrides: Override[] = [
+  {
+    id: "ovr-1",
+    decision: "dec-2",
+    authority: "Chief Risk Officer",
+    reason: "Additional documentation provided. Risk mitigated.",
+    approvedBy: "Sarah Chen",
+    timestamp: "1 day ago",
+  },
+]
+
+export function CapIVEQWorkspace({ defaultTab = "governance" }: { defaultTab?: EQTab }) {
   const [activeTab, setActiveTab] = useState<EQTab>(defaultTab)
-  const [selectedMetric, setSelectedMetric] = useState<string | null>(null)
-
-  const [roiInputs, setRoiInputs] = useState({
-    initialInvestment: "",
-    finalValue: "",
-    timePeriod: "",
-    annualContribution: "",
-    annualCashFlow: "",
+  const [ruleInputs, setRuleInputs] = useState({
+    name: "",
+    category: "source" as GovernanceRule["category"],
+    condition: "",
+    action: "allow" as GovernanceRule["action"],
   })
-  const [irrInputs, setIrrInputs] = useState({
-    initialInvestment: "",
-    cashFlows: "",
-    timeYears: "",
-  })
-  const [capRateInputs, setCapRateInputs] = useState({
-    noi: "",
-    purchasePrice: "",
-    debtService: "",
-    exitCapRate: "",
-  })
-
-  const roiResults = useMemo(() => {
-    const capital = Number.parseFloat(roiInputs.initialInvestment) || 0
-    const time = Number.parseFloat(roiInputs.timePeriod) || 0
-    const final = Number.parseFloat(roiInputs.finalValue) || 0
-    const contribution = Number.parseFloat(roiInputs.annualContribution) || 0
-    const annualCashFlow = Number.parseFloat(roiInputs.annualCashFlow) || 0
-
-    if (!capital || !time || !final || time <= 0) {
-      return null
-    }
-
-    const totalContributions = contribution * Math.max(time - 1, 0)
-    const totalInvested = capital + totalContributions
-    const distributed = final + annualCashFlow * time
-    const netProfit = distributed - totalInvested
-    const totalReturn = totalInvested ? (netProfit / totalInvested) * 100 : 0
-    const annualizedReturn = totalInvested ? (Math.pow(distributed / totalInvested, 1 / time) - 1) * 100 : 0
-    const moic = totalInvested ? distributed / totalInvested : 0
-    const cashOnCash = totalInvested ? (annualCashFlow / totalInvested) * 100 : 0
-    const paybackYears = annualCashFlow > 0 ? totalInvested / annualCashFlow : null
-
-    return {
-      amount: Number.isFinite(final) ? Math.round(final) : 0,
-      roi: Number.isFinite(totalReturn) ? Number.parseFloat(totalReturn.toFixed(1)) : 0,
-      annual: Number.isFinite(annualizedReturn) ? Number.parseFloat(annualizedReturn.toFixed(1)) : 0,
-      totalInvested,
-      distributed,
-      netProfit,
-      moic,
-      cashOnCash,
-      paybackYears,
-      annualCashFlow,
-      time,
-    }
-  }, [roiInputs])
-
-  const scenarioRows = useMemo(() => {
-    if (!roiResults) return []
-    const baseExit = Number.parseFloat(roiInputs.finalValue) || 0
-    const adjustments = [
-      { label: "Downside", delta: -0.1 },
-      { label: "Base", delta: 0 },
-      { label: "Upside", delta: 0.15 },
-    ]
-    return adjustments.map((scenario) => {
-      const adjustedExit = baseExit * (1 + scenario.delta)
-      const distributed =
-        adjustedExit + (roiResults.annualCashFlow || 0) * (roiResults.time || 0)
-      const roi =
-        roiResults.totalInvested && roiResults.totalInvested > 0
-          ? (((distributed - roiResults.totalInvested) / roiResults.totalInvested) * 100).toFixed(1)
-          : "0.0"
-      const moic =
-        roiResults.totalInvested && roiResults.totalInvested > 0
-          ? (distributed / roiResults.totalInvested).toFixed(2)
-          : "0.00"
-      return {
-        ...scenario,
-        exitValue: adjustedExit,
-        roi,
-        moic,
-      }
-    })
-  }, [roiResults, roiInputs.finalValue])
-
-  const capRateResults = useMemo(() => {
-    const noi = Number.parseFloat(capRateInputs.noi) || 0
-    const purchasePrice = Number.parseFloat(capRateInputs.purchasePrice) || 0
-    const debtService = Number.parseFloat(capRateInputs.debtService) || 0
-    const exitCapRate = Number.parseFloat(capRateInputs.exitCapRate) || 0
-
-    if (!noi && !purchasePrice && !debtService && !exitCapRate) return null
-
-    const capRate = purchasePrice ? (noi / purchasePrice) * 100 : null
-    const dscr = debtService ? noi / debtService : null
-    const impliedValue = exitCapRate ? (noi / (exitCapRate / 100)) : null
-
-    return {
-      capRate,
-      dscr,
-      impliedValue,
-      noi,
-    }
-  }, [capRateInputs])
 
   return (
     <div className="min-h-full px-8 py-10 space-y-8">
+      {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
         <div className="flex items-center gap-4">
-          <div className="rounded-2xl bg-emerald-500/20 p-4">
-            <CalculatorIcon className="w-7 h-7 text-emerald-200" />
+          <div className="rounded-2xl bg-blue-500/20 p-4">
+            <Shield className="w-7 h-7 text-blue-200" />
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-emerald-200/70">CapIV™ EQ</p>
-            <h1 className="text-3xl font-semibold text-white mt-1">Capital Efficiency Studio</h1>
+            <p className="text-xs uppercase tracking-[0.4em] text-blue-200/70">CapIV™ EQ</p>
+            <h1 className="text-3xl font-semibold text-white mt-1">Capital Governance Plane</h1>
             <p className="text-slate-300 mt-1">
-              Run investment models, surface portfolio KPIs, and unlock reporting from one workspace.
+              Define rules, classify capital sources, enforce constraints, and make intelligent governance decisions.
             </p>
           </div>
         </div>
       </div>
 
+      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(tab) => setActiveTab(tab as EQTab)} className="space-y-6">
-        <TabsList className="grid w-full max-w-3xl grid-cols-2 rounded-2xl bg-slate-900/80 border border-slate-800">
+        <TabsList className="grid w-full max-w-4xl grid-cols-4 rounded-2xl bg-slate-900/80 border border-slate-800">
           <TabsTrigger
-            value="calculator"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-slate-300"
+            value="governance"
+            className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
           >
-            Investment Calculator
+            Governance Rules
           </TabsTrigger>
           <TabsTrigger
-            value="portfolio"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-slate-300"
+            value="rules"
+            className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
           >
-            Portfolio Intelligence
+            Rule Editor
+          </TabsTrigger>
+          <TabsTrigger
+            value="decisions"
+            className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
+          >
+            Decisions Log
+          </TabsTrigger>
+          <TabsTrigger
+            value="overrides"
+            className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
+          >
+            Overrides
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="calculator" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="bg-slate-900/80 border border-slate-800">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <DollarSign className="w-5 h-5 text-emerald-300" />
-                  ROI Inputs
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="eq-capital" className="text-slate-300">
-                    Initial Equity
-                  </Label>
-                  <Input
-                    id="eq-capital"
-                    type="number"
-                    placeholder="2500000"
-                    value={roiInputs.initialInvestment}
-                    onChange={(e) => setRoiInputs((prev) => ({ ...prev, initialInvestment: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="eq-contribution" className="text-slate-300">
-                    Annual Contributions
-                  </Label>
-                  <Input
-                    id="eq-contribution"
-                    type="number"
-                    placeholder="250000"
-                    value={roiInputs.annualContribution}
-                    onChange={(e) => setRoiInputs((prev) => ({ ...prev, annualContribution: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="eq-cash-flow" className="text-slate-300">
-                    Annual Cash Flow
-                  </Label>
-                  <Input
-                    id="eq-cash-flow"
-                    type="number"
-                    placeholder="180000"
-                    value={roiInputs.annualCashFlow}
-                    onChange={(e) => setRoiInputs((prev) => ({ ...prev, annualCashFlow: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="eq-final" className="text-slate-300">
-                    Exit / Terminal Value
-                  </Label>
-                  <Input
-                    id="eq-final"
-                    type="number"
-                    placeholder="3200000"
-                    value={roiInputs.finalValue}
-                    onChange={(e) => setRoiInputs((prev) => ({ ...prev, finalValue: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="eq-time" className="text-slate-300">
-                    Time Horizon (Years)
-                  </Label>
-                  <Input
-                    id="eq-time"
-                    type="number"
-                    placeholder="5"
-                    value={roiInputs.timePeriod}
-                    onChange={(e) => setRoiInputs((prev) => ({ ...prev, timePeriod: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-slate-900/80 border border-slate-800">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <TrendingUp className="w-5 h-5 text-emerald-300" />
-                  Results
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {roiResults ? (
-                  <>
-                    <div className="rounded-2xl border border-blue-500/30 bg-blue-600/10 p-5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-300 uppercase tracking-[0.2em]">Projected Value</span>
-                        <span className="text-3xl font-semibold text-blue-200">
-                          ${roiResults.amount.toLocaleString("en-US")}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-300 uppercase tracking-[0.2em]">Total ROI</span>
-                        <span className="text-3xl font-semibold text-emerald-200">{roiResults.roi}%</span>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-300 uppercase tracking-[0.2em]">Annualized ROI</span>
-                        <span className="text-3xl font-semibold text-purple-200">{roiResults.annual}%</span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-10 text-center text-slate-500">
-                    <CalculatorIcon className="w-12 h-12 mx-auto mb-4 opacity-60" />
-                    <p>Enter values to see modeled outcomes.</p>
+        {/* Governance Rules Tab */}
+        <TabsContent value="governance" className="space-y-6">
+          <div className="grid grid-cols-1 gap-6">
+            {mockRules.map((rule) => (
+              <Card key={rule.id} className="bg-slate-900/80 border border-slate-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle className="flex items-center gap-3 text-white">
+                      <Lock className="w-5 h-5 text-blue-300" />
+                      {rule.name}
+                    </CardTitle>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  <Badge
+                    className={
+                      rule.action === "allow"
+                        ? "bg-emerald-500/20 text-emerald-200"
+                        : rule.action === "reject"
+                          ? "bg-red-500/20 text-red-200"
+                          : "bg-amber-500/20 text-amber-200"
+                    }
+                  >
+                    {rule.action === "allow" ? "Allow" : rule.action === "reject" ? "Reject" : "Conditional"}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4 text-sm text-slate-300">
+                    <div>
+                      <p className="text-slate-400">Category</p>
+                      <p className="font-semibold text-white capitalize">{rule.category}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400">Priority</p>
+                      <p className="font-semibold text-white">Level {rule.priority}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 text-sm mb-1">Condition</p>
+                    <p className="text-slate-200">{rule.condition}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
+        </TabsContent>
 
-          {roiResults && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="bg-slate-900/80 border border-slate-800">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-white">
-                    <LineChart className="w-5 h-5 text-blue-300" />
-                    Detailed Metrics
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-2 gap-4 text-slate-300 text-sm">
-                  <div>
-                    <p className="text-slate-400">Total Invested</p>
-                    <p className="text-lg font-semibold text-white">
-                      ${roiResults.totalInvested.toLocaleString("en-US")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-slate-400">Cash Distributed</p>
-                    <p className="text-lg font-semibold text-white">
-                      ${roiResults.distributed.toLocaleString("en-US")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-slate-400">Net Profit</p>
-                    <p className="text-lg font-semibold text-emerald-300">
-                      ${roiResults.netProfit.toLocaleString("en-US")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-slate-400">MOIC</p>
-                    <p className="text-lg font-semibold text-white">{roiResults.moic.toFixed(2)}x</p>
-                  </div>
-                  <div>
-                    <p className="text-slate-400">Cash-on-Cash</p>
-                    <p className="text-lg font-semibold text-white">{roiResults.cashOnCash.toFixed(1)}%</p>
-                  </div>
-                  <div>
-                    <p className="text-slate-400">Payback Period</p>
-                    <p className="text-lg font-semibold text-white">
-                      {roiResults.paybackYears ? `${roiResults.paybackYears.toFixed(1)} yrs` : "N/A"}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-slate-900/80 border border-slate-800">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-white">
-                    <Percent className="w-5 h-5 text-purple-300" />
-                    Scenario Planner
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-slate-300">
-                  {scenarioRows.length ? (
-                    <div className="grid grid-cols-3 gap-3 text-center">
-                      {scenarioRows.map((scenario) => (
-                        <div
-                          key={scenario.label}
-                          className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 space-y-2"
-                        >
-                          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{scenario.label}</p>
-                          <p className="text-lg font-semibold text-white">
-                            ${scenario.exitValue.toLocaleString("en-US")}
-                          </p>
-                          <p className="text-xs text-slate-400">Exit Value</p>
-                          <p className="text-sm font-semibold text-emerald-200">{scenario.roi}% ROI</p>
-                          <p className="text-xs text-slate-400">{scenario.moic}x MOIC</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-slate-500 text-center">Enter ROI assumptions to unlock scenario analysis.</p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
+        {/* Rule Editor Tab */}
+        <TabsContent value="rules" className="space-y-6">
           <Card className="bg-slate-900/80 border border-slate-800">
             <CardHeader>
-              <CardTitle className="text-white">IRR &amp; Cap Rate Planning</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Settings className="w-5 h-5 text-blue-300" />
+                Create Governance Rule
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 text-slate-300">
-              <p>
-                Advanced IRR, cash flow laddering, and cap-rate scenarios are unlocking soon. Use CapIV™ EQ to record
-                assumptions so AI-generated underwriting packets stay synced with your models.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="rule-name" className="text-slate-300">
+                  Rule Name
+                </Label>
                 <Input
-                  placeholder="Initial Investment"
-                  value={irrInputs.initialInvestment}
-                  onChange={(e) => setIrrInputs((prev) => ({ ...prev, initialInvestment: e.target.value }))}
-                  className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                />
-                <Input
-                  placeholder="Cash Flows (comma separated)"
-                  value={irrInputs.cashFlows}
-                  onChange={(e) => setIrrInputs((prev) => ({ ...prev, cashFlows: e.target.value }))}
-                  className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                />
-                <Input
-                  placeholder="Years"
-                  value={irrInputs.timeYears}
-                  onChange={(e) => setIrrInputs((prev) => ({ ...prev, timeYears: e.target.value }))}
-                  className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
+                  id="rule-name"
+                  placeholder="e.g., Minimum Investment Threshold"
+                  value={ruleInputs.name}
+                  onChange={(e) => setRuleInputs((prev) => ({ ...prev, name: e.target.value }))}
+                  className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
                 />
               </div>
-              <p className="text-sm text-slate-500">
-                Stay tuned for downloadable underwriting models and data exports inside CapIV™ EQ.
-              </p>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="rule-category" className="text-slate-300">
+                    Category
+                  </Label>
+                  <Select value={ruleInputs.category} onValueChange={(v) => setRuleInputs((prev) => ({ ...prev, category: v as GovernanceRule["category"] }))}>
+                    <SelectTrigger className="mt-2 bg-slate-950 border-slate-800 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="source">Capital Source</SelectItem>
+                      <SelectItem value="asset">Asset Class</SelectItem>
+                      <SelectItem value="jurisdiction">Jurisdiction</SelectItem>
+                      <SelectItem value="risk">Risk Profile</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="rule-action" className="text-slate-300">
+                    Action
+                  </Label>
+                  <Select value={ruleInputs.action} onValueChange={(v) => setRuleInputs((prev) => ({ ...prev, action: v as GovernanceRule["action"] }))}>
+                    <SelectTrigger className="mt-2 bg-slate-950 border-slate-800 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="allow">Allow</SelectItem>
+                      <SelectItem value="reject">Reject</SelectItem>
+                      <SelectItem value="conditional">Conditional</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="rule-condition" className="text-slate-300">
+                  Rule Condition
+                </Label>
+                <textarea
+                  id="rule-condition"
+                  placeholder="Define the specific condition or constraint..."
+                  value={ruleInputs.condition}
+                  onChange={(e) => setRuleInputs((prev) => ({ ...prev, condition: e.target.value }))}
+                  className="mt-2 w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 min-h-24"
+                />
+              </div>
+
+              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                Save Governance Rule
+              </Button>
             </CardContent>
           </Card>
+        </TabsContent>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="bg-slate-900/80 border border-slate-800">
-              <CardHeader>
-                <CardTitle className="text-white">Cap Rate &amp; Debt Coverage Inputs</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label className="text-slate-300" htmlFor="eq-noi">
-                    Net Operating Income
-                  </Label>
-                  <Input
-                    id="eq-noi"
-                    type="number"
-                    placeholder="650000"
-                    value={capRateInputs.noi}
-                    onChange={(e) => setCapRateInputs((prev) => ({ ...prev, noi: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-                <div>
-                  <Label className="text-slate-300" htmlFor="eq-price">
-                    Purchase Price / Value
-                  </Label>
-                  <Input
-                    id="eq-price"
-                    type="number"
-                    placeholder="9500000"
-                    value={capRateInputs.purchasePrice}
-                    onChange={(e) => setCapRateInputs((prev) => ({ ...prev, purchasePrice: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-                <div>
-                  <Label className="text-slate-300" htmlFor="eq-debt">
-                    Annual Debt Service
-                  </Label>
-                  <Input
-                    id="eq-debt"
-                    type="number"
-                    placeholder="520000"
-                    value={capRateInputs.debtService}
-                    onChange={(e) => setCapRateInputs((prev) => ({ ...prev, debtService: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-                <div>
-                  <Label className="text-slate-300" htmlFor="eq-exit-cap">
-                    Exit Cap Rate (%)
-                  </Label>
-                  <Input
-                    id="eq-exit-cap"
-                    type="number"
-                    placeholder="5.75"
-                    value={capRateInputs.exitCapRate}
-                    onChange={(e) => setCapRateInputs((prev) => ({ ...prev, exitCapRate: e.target.value }))}
-                    className="mt-2 bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-slate-900/80 border border-slate-800">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <BarChart3 className="w-5 h-5 text-emerald-300" />
-                  Cap Rate Outputs
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm text-slate-300">
-                {capRateResults ? (
-                  <>
-                    <div className="rounded-2xl border border-blue-500/30 bg-blue-600/10 p-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-blue-200">Cap Rate</p>
-                      <p className="text-3xl font-semibold text-white">
-                        {capRateResults.capRate !== null && capRateResults.capRate !== undefined
-                          ? `${capRateResults.capRate.toFixed(2)}%`
-                          : "—"}
-                      </p>
+        {/* Decisions Log Tab */}
+        <TabsContent value="decisions" className="space-y-6">
+          <div className="grid grid-cols-1 gap-6">
+            {mockDecisions.map((decision) => (
+              <Card key={decision.id} className="bg-slate-900/80 border border-slate-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <div className="flex items-center gap-3">
+                    {decision.status === "approved" && (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    )}
+                    {decision.status === "rejected" && (
+                      <XCircle className="w-5 h-5 text-red-400" />
+                    )}
+                    {decision.status === "conditional" && (
+                      <AlertCircle className="w-5 h-5 text-amber-400" />
+                    )}
+                    <div>
+                      <CardTitle className="text-white">{decision.source}</CardTitle>
+                      <p className="text-sm text-slate-400">{decision.capital} • {decision.timestamp}</p>
                     </div>
-                    <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-emerald-200">DSCR</p>
-                      <p className="text-3xl font-semibold text-white">
-                        {capRateResults.dscr !== null && capRateResults.dscr !== undefined
-                          ? capRateResults.dscr.toFixed(2)
-                          : "—"}
-                      </p>
+                  </div>
+                  <Badge
+                    className={
+                      decision.status === "approved"
+                        ? "bg-emerald-500/20 text-emerald-200"
+                        : decision.status === "rejected"
+                          ? "bg-red-500/20 text-red-200"
+                          : "bg-amber-500/20 text-amber-200"
+                    }
+                  >
+                    {decision.status.charAt(0).toUpperCase() + decision.status.slice(1)}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-slate-300">
+                    <div>
+                      <p className="text-slate-400">Asset Class</p>
+                      <p className="font-semibold text-white">{decision.assetClass}</p>
                     </div>
-                    <div className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-purple-200">Implied Value @ Exit Cap</p>
-                      <p className="text-2xl font-semibold text-white">
-                        {capRateResults.impliedValue
-                          ? `$${Math.round(capRateResults.impliedValue).toLocaleString("en-US")}`
-                          : "Enter cap rate"}
-                      </p>
+                    <div>
+                      <p className="text-slate-400">Jurisdiction</p>
+                      <p className="font-semibold text-white">{decision.jurisdiction}</p>
                     </div>
-                    <p className="text-xs text-slate-500">
-                      Align DSCR thresholds with lending partners and compare implied exit values with CapIV Core comps.
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-slate-500 text-center">
-                    Provide NOI, pricing, and leverage assumptions to see cap rate metrics.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+                    <div>
+                      <p className="text-slate-400">Risk Level</p>
+                      <p className="font-semibold text-white">{decision.riskLevel}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400">ID</p>
+                      <p className="font-semibold text-white text-xs">{decision.id}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-slate-950/60 p-3 border border-slate-800">
+                    <p className="text-sm text-slate-300">{decision.reason}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </TabsContent>
 
-        <TabsContent value="portfolio" className="space-y-6">
-          <div className="rounded-3xl bg-gradient-to-r from-emerald-500/10 via-slate-900 to-slate-900 border border-emerald-500/20 p-6">
-            <div className="flex items-center gap-3">
-              <BarChart3 className="w-5 h-5 text-emerald-300" />
-              <div>
-                <p className="text-sm uppercase tracking-[0.3em] text-emerald-200/70">Portfolio Signal</p>
-                <p className="text-base text-slate-200">KPIs, allocations, and download-ready investor reporting.</p>
-              </div>
-            </div>
+        {/* Overrides Tab */}
+        <TabsContent value="overrides" className="space-y-6">
+          <div className="grid grid-cols-1 gap-6">
+            {mockOverrides.map((override) => (
+              <Card key={override.id} className="bg-slate-900/80 border border-slate-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-white">
+                      <LogOut className="w-5 h-5 text-purple-300" />
+                      Override Authority: {override.authority}
+                    </CardTitle>
+                    <p className="text-sm text-slate-400 mt-1">Decision {override.decision} • {override.timestamp}</p>
+                  </div>
+                  <Badge className="bg-purple-500/20 text-purple-200">Approved</Badge>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4 text-sm text-slate-300">
+                    <div>
+                      <p className="text-slate-400">Approved By</p>
+                      <p className="font-semibold text-white">{override.approvedBy}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 text-sm mb-1">Override Reason</p>
+                    <p className="text-slate-200">{override.reason}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-          <PortfolioAnalysis selectedMetric={selectedMetric} onMetricSelect={setSelectedMetric} />
         </TabsContent>
       </Tabs>
+
+      {/* Footer Note */}
+      <Card className="bg-blue-500/10 border border-blue-500/30">
+        <CardContent className="pt-6">
+          <p className="text-sm text-blue-200">
+            <strong>CapIV EQ</strong> is the governance plane. It classifies capital sources, applies eligibility rules,
+            enforces constraints, allows rejection or conditional approval, logs decisions, and provides override
+            authority. Capital decisions are logged and auditable.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   )
 }
