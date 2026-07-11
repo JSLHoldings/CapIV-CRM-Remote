@@ -2,12 +2,13 @@
 
 import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Shield, LineChart, Users } from "lucide-react"
+import { Shield, LineChart, Users, ShieldCheck } from "lucide-react"
 import { DueDiligence } from "@/components/due-diligence"
 import { Underwriting } from "@/components/underwriting"
 import { Matchmaking } from "@/components/matchmaking"
+import { ComplianceHub } from "@/components/compliance-hub"
 
-type IQTab = "due-diligence" | "underwriting" | "matchmaking"
+type IQTab = "due-diligence" | "underwriting" | "matchmaking" | "compliance"
 
 interface CapIVIQWorkspaceProps {
   defaultTab?: IQTab
@@ -35,7 +36,7 @@ export function CapIVIQWorkspace({ defaultTab = "due-diligence" }: CapIVIQWorksp
       </div>
 
       <Tabs value={activeTab} onValueChange={(tab) => setActiveTab(tab as IQTab)} className="space-y-6">
-        <TabsList className="grid w-full max-w-4xl grid-cols-3 rounded-2xl bg-slate-900/80 border border-slate-800">
+        <TabsList className="grid w-full max-w-4xl grid-cols-4 rounded-2xl bg-slate-900/80 border border-slate-800">
           <TabsTrigger
             value="due-diligence"
             className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
@@ -53,6 +54,13 @@ export function CapIVIQWorkspace({ defaultTab = "due-diligence" }: CapIVIQWorksp
             className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
           >
             Matchmaking
+          </TabsTrigger>
+          <TabsTrigger
+            value="compliance"
+            className="data-[state=active]:bg-emerald-700 data-[state=active]:text-white text-slate-300"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+            Compliance
           </TabsTrigger>
         </TabsList>
 
@@ -86,6 +94,9 @@ export function CapIVIQWorkspace({ defaultTab = "due-diligence" }: CapIVIQWorksp
             </div>
           </div>
           <Matchmaking />
+        </TabsContent>
+        <TabsContent value="compliance" className="space-y-6">
+          <ComplianceHub />
         </TabsContent>
       </Tabs>
     </div>
