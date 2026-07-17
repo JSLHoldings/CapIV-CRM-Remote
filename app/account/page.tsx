@@ -7,10 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { User, Bell, Shield, CreditCard } from "lucide-react"
+import { User, Bell, Shield, CreditCard, FolderOpen } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { useAuth } from "@/hooks/use-auth"
 import { DashboardShell } from "@/components/dashboard-shell"
+import { DocumentVault } from "@/components/document-vault"
 
 export default function AccountPage() {
   const { user } = useAuth()
@@ -31,7 +32,7 @@ export default function AccountPage() {
 
           <div className="max-w-5xl">
             <Tabs defaultValue="profile" className="space-y-8">
-              <TabsList className="grid w-full grid-cols-4 rounded-2xl bg-slate-900/80 border border-slate-800">
+              <TabsList className="grid w-full grid-cols-5 rounded-2xl bg-slate-900/80 border border-slate-800">
                 <TabsTrigger
                   value="profile"
                   className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
@@ -55,6 +56,13 @@ export default function AccountPage() {
                   className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
                 >
                   Billing
+                </TabsTrigger>
+                <TabsTrigger
+                  value="documents"
+                  className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-slate-300"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+                  Documents
                 </TabsTrigger>
               </TabsList>
 
@@ -255,6 +263,10 @@ export default function AccountPage() {
                     <p className="text-slate-400">Billing settings coming soon...</p>
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="documents">
+                <DocumentVault />
               </TabsContent>
             </Tabs>
           </div>
