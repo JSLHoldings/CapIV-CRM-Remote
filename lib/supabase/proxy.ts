@@ -35,7 +35,11 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
-  const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname.startsWith("/auth")
+  const isAuthPage =
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/forgot-password" ||
+    pathname.startsWith("/auth")
   // API routes manage their own auth and must never be redirected to /login,
   // otherwise POSTs (e.g. /api/auth/signup) get bounced before they run.
   const isApiRoute = pathname.startsWith("/api")

@@ -3,6 +3,7 @@
 import type React from "react"
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { logActivity } from "@/lib/activity"
 import type { Session } from "@supabase/supabase-js"
 
 export type AccountType =
@@ -120,6 +121,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.removeItem("capiv_just_signed_up")
     }
     applySession(data.session)
+    void logActivity({
+      action: "User signed in",
+      category: "auth",
+      metadata: { email },
+    })
     return true
   }
 
@@ -167,10 +173,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     applySession(data.session)
+    void logActivity({
+      action: "New account created",
+      category: "auth",
+      metadata: { email, accountType },
+    })
     return { success: true }
   }
 
   const logout = () => {
+    // Log before clearing state so user_id is still available.
+    void logActivity({ action: "User signed out", category: "auth" })
     supabase.auth.signOut()
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("capiv_just_signed_up")

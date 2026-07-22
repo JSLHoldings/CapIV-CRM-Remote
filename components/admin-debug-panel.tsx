@@ -13,7 +13,8 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from "next/navigation"
-import { Eye, CheckCircle, XCircle, Clock, FileText } from "lucide-react"
+import { Eye, CheckCircle, XCircle, Clock, FileText, Activity } from "lucide-react"
+import { AdminActivityLog } from "@/components/admin-activity-log"
 
 export function AdminDebugPanel() {
   const { user, login, logout } = useAuth()
@@ -193,7 +194,7 @@ export function AdminDebugPanel() {
       </div>
 
       <Tabs defaultValue="controls" className="w-full space-y-6">
-        <TabsList className="grid w-full grid-cols-5 rounded-2xl border border-slate-800 bg-slate-950/60 p-1">
+        <TabsList className="grid w-full grid-cols-6 rounded-2xl border border-slate-800 bg-slate-950/60 p-1">
           <TabsTrigger value="controls" className="rounded-xl data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             Controls
           </TabsTrigger>
@@ -208,6 +209,10 @@ export function AdminDebugPanel() {
           </TabsTrigger>
           <TabsTrigger value="om-review" className="rounded-xl data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             OM Review
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="rounded-xl data-[state=active]:bg-blue-600 data-[state=active]:text-white flex items-center gap-1.5">
+            <Activity className="w-3.5 h-3.5" />
+            Activity
           </TabsTrigger>
         </TabsList>
 
@@ -607,6 +612,10 @@ export function AdminDebugPanel() {
             )}
           </CardContent>
         </Card>
+        </TabsContent>
+
+        <TabsContent value="activity">
+          <AdminActivityLog />
         </TabsContent>
       </Tabs>
     </div>
