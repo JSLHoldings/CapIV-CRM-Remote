@@ -21,6 +21,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { DocumentVault } from "@/components/document-vault"
 import { createClient } from "@/lib/supabase/client"
+import { logActivity } from "@/lib/activity"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -195,6 +196,7 @@ export default function AccountPage() {
     } else {
       show("success", "Profile updated successfully.")
       setProfile(p => p ? { ...p, name, phone, company, job_title: jobTitle, bio } : p)
+      void logActivity({ action: "Updated profile information", category: "profile" })
     }
   }
 
@@ -244,6 +246,7 @@ export default function AccountPage() {
       setCurrentPassword("")
       setNewPassword("")
       setConfirmPassword("")
+      void logActivity({ action: "Changed account password", category: "security" })
     }
   }
 

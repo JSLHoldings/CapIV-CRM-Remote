@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { logActivity } from "@/lib/activity"
 import { useAuth } from "@/hooks/use-auth"
 import { SignaturePad } from "@/components/signature-pad"
 import { Button } from "@/components/ui/button"
@@ -561,6 +562,12 @@ export function DocumentVault() {
         file_size: file.size,
         file_data: fileData,
       })
+
+      void logActivity({
+        action: "Uploaded a document",
+        category: "documents",
+        metadata: { file_name: file.name, doc_category: category },
+      })
     }
 
     await loadDocuments()
@@ -580,6 +587,11 @@ export function DocumentVault() {
       .from("documents")
       .update({ signed_at: new Date().toISOString(), signer_name: signerName, signature_image: signatureImage })
       .eq("id", signDoc.id)
+    void logActivity({
+      action: "Signed a document",
+      category: "documents",
+      metadata: { file_name: signDoc.file_name, signer_name: signerName },
+    })
     setSignDoc(null)
     await loadDocuments()
   }
