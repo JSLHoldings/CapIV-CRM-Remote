@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { createClient } from "@/lib/supabase/client"
+import { logActivity } from "@/lib/activity"
 
 export interface DocumentUpload {
   name: string
@@ -206,6 +207,11 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
         nda_signature_name: signatureName,
         nda_signed_at: new Date().toISOString(),
       })
+      void logActivity({
+        action: "Signed NDA",
+        category: "verification",
+        metadata: { signer_name: signatureName },
+      })
     },
     [persist],
   )
@@ -226,6 +232,11 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       setCurrentStep("complete")
       setIsVerified(true)
       void persist({ company_info: info, verification_step: "complete", is_verified: true })
+      void logActivity({
+        action: "Completed onboarding survey",
+        category: "verification",
+        metadata: { company_name: info.companyName, entity_type: info.entityType },
+      })
     },
     [persist],
   )
