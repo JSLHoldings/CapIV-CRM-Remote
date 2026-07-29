@@ -29,8 +29,14 @@ export default function ForgotPasswordPage() {
 
     setIsLoading(true)
     const supabase = createClient()
+    // Use the deployed site URL for the redirect — never localhost.
+    // NEXT_PUBLIC_APP_URL is set on Vercel; V0_RUNTIME_URL is the live preview URL.
+    const appBase =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_VERCEL_URL && `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` ||
+      "https://vm-ai-due-diligence-tab.vusercontent.net"
     const { error: sbError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
+      redirectTo: `${appBase}/auth/reset-password`,
     })
     setIsLoading(false)
 

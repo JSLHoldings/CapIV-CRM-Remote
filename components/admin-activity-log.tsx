@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -71,6 +72,7 @@ export function AdminActivityLog() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
+  const [fetchError, setFetchError] = useState("")
   const [search, setSearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [userFilter, setUserFilter] = useState("")
@@ -81,48 +83,54 @@ export function AdminActivityLog() {
 
   const fetchLogs = useCallback(async () => {
     setIsLoading(true)
+    setFetchError("")
 
-    let query = supabase
-      .from("user_activity_log")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-
-    if (categoryFilter !== "all") query = query.eq("category", categoryFilter)
-    if (userFilter) query = query.eq("user_id", userFilter)
-    if (search) query = query.or(`action.ilike.%${search}%,user_email.ilike.%${search}%,user_name.ilike.%${search}%`)
-
-    const { data, count, error } = await query
-    setIsLoading(false)
-
-    if (error) {
-      console.error("[v0] Activity log fetch error:", error.message)
+    // Get the current session token to pass to the admin API route.
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      setIsLoading(false)
+      setFetchError("No active session.")
       return
     }
 
-    setLogs((data as ActivityRow[]) ?? [])
-    setTotal(count ?? 0)
-    setLastRefreshed(new Date())
-  }, [page, categoryFilter, userFilter, search]) // eslint-disable-line react-hooks/exhaustive-deps
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+      category: categoryFilter,
+      userId: userFilter,
+      search,
+    })
 
-  // Fetch unique users for the filter dropdown
-  useEffect(() => {
-    supabase
-      .from("user_activity_log")
-      .select("user_id, user_email, user_name")
-      .then(({ data }) => {
-        if (!data) return
-        const seen = new Set<string>()
-        const unique: typeof users = []
-        for (const row of data) {
-          if (!seen.has(row.user_id)) {
-            seen.add(row.user_id)
-            unique.push({ id: row.user_id, email: row.user_email ?? "", name: row.user_name ?? "" })
-          }
+    const res = await fetch(`/api/admin/activity?${params}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+
+    setIsLoading(false)
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setFetchError(body.error ?? `Request failed (${res.status})`)
+      return
+    }
+
+    const body = await res.json()
+    setLogs(body.data ?? [])
+    setTotal(body.total ?? 0)
+    setLastRefreshed(new Date())
+
+    // Build unique-user list from whatever the API returned.
+    setUsers((prev) => {
+      const seen = new Set(prev.map((u) => u.id))
+      const next = [...prev]
+      for (const row of (body.data ?? []) as ActivityRow[]) {
+        if (!seen.has(row.user_id)) {
+          seen.add(row.user_id)
+          next.push({ id: row.user_id, email: row.user_email ?? "", name: row.user_name ?? "" })
         }
-        setUsers(unique)
-      })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+      }
+      return next
+    })
+  }, [page, categoryFilter, userFilter, search]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setPage(0)
@@ -255,6 +263,13 @@ export function AdminActivityLog() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Error */}
+          {fetchError && (
+            <Alert variant="destructive">
+              <AlertDescription>{fetchError}</AlertDescription>
+            </Alert>
+          )}
 
           {/* Log table */}
           {isLoading ? (
