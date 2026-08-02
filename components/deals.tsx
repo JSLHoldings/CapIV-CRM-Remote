@@ -14,9 +14,10 @@ import { Progress } from "@/components/ui/progress"
 import {
   ArrowRight, Plus, MapPin, DollarSign, Calendar, Building, TrendingUp,
   Users, Heart, Bookmark, Eye, BarChart3, CheckCircle2, XCircle,
-  AlertCircle, Loader2, RefreshCw, FileText, Clock, Shield
+  AlertCircle, Loader2, RefreshCw, FileText, Clock, Shield, Upload
 } from "lucide-react"
 import { SearchFilters, type FilterOptions } from "@/components/search-filters"
+import { DealUploadDialog, type ExtractedDealFields } from "@/components/deal-upload-dialog"
 import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
 
@@ -181,6 +182,7 @@ export function Deals() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [pipelineResult, setPipelineResult] = useState<OSPipelineResult | null>(null)
@@ -280,6 +282,26 @@ export function Deals() {
     setDeals((prev) => prev.map((d) => d.id === dealId ? { ...d, isBookmarked: !d.isBookmarked } : d))
   }, [])
 
+  // ── Populate form from AI-extracted fields then open Add Deal dialog ──
+  const handlePopulateFromUpload = useCallback((fields: ExtractedDealFields) => {
+    setForm({
+      title: fields.title,
+      sponsor: fields.sponsor,
+      location: fields.location,
+      assetType: fields.assetType === "Other" ? "Multifamily" : fields.assetType,
+      dealSize: fields.dealSize,
+      investmentType: fields.investmentType,
+      riskProfile: fields.riskProfile,
+      targetReturn: fields.targetReturn === "—" ? "" : fields.targetReturn,
+      holdPeriod: fields.holdPeriod === "—" ? "" : fields.holdPeriod,
+      description: fields.description,
+      minimumInvestment: fields.minimumInvestment === "—" ? "" : fields.minimumInvestment,
+      maxRaise: fields.maxRaise === "—" ? "" : fields.maxRaise,
+    })
+    setPipelineResult(null)
+    setIsAddDialogOpen(true)
+  }, [])
+
   // ── Submit new deal: run OS pipeline then persist ──
   const handleAddDeal = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -372,6 +394,14 @@ export function Deals() {
           <Button variant="outline" size="sm" className="border-slate-700 text-slate-300" onClick={loadDeals}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
+          </Button>
+          <Button
+            variant="outline"
+            className="border-slate-700 text-slate-200 hover:border-blue-500/60 hover:text-blue-300"
+            onClick={() => setIsUploadDialogOpen(true)}
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Import from Document
           </Button>
           <Button className="bg-blue-600 hover:bg-blue-500 text-white" onClick={() => { setPipelineResult(null); setIsAddDialogOpen(true) }}>
             <Plus className="h-4 w-4 mr-2" />
@@ -591,11 +621,26 @@ export function Deals() {
         </DialogContent>
       </Dialog>
 
+      {/* Import from Document Dialog */}
+      <DealUploadDialog
+        open={isUploadDialogOpen}
+        onOpenChange={setIsUploadDialogOpen}
+        onPopulateForm={handlePopulateFromUpload}
+      />
+
       {/* Add Deal Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-slate-950 border border-slate-800 text-slate-100">
           <DialogHeader>
-            <DialogTitle className="text-white">Add New Deal</DialogTitle>
+            <DialogTitle className="text-white flex items-center gap-2">
+              Add New Deal
+              {form.title && (
+                <span className="inline-flex items-center gap-1 text-xs font-normal bg-blue-500/10 border border-blue-500/30 text-blue-300 rounded-full px-2 py-0.5">
+                  <Upload className="h-3 w-3" />
+                  Pre-populated from document
+                </span>
+              )}
+            </DialogTitle>
             <p className="text-sm text-slate-400">Deal will be run through the CapIV OS execution pipeline on submission.</p>
           </DialogHeader>
           <form onSubmit={handleAddDeal} className="space-y-4">
