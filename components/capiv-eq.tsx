@@ -336,7 +336,7 @@ function StatCard({
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
-type EQTab = "classify" | "rules" | "decisions" | "overrides"
+type EQTab = "classify" | "rules" | "decisions" | "overrides" | "calculator" | "portfolio"
 
 export function CapIVEQWorkspace({ defaultTab = "classify" }: { defaultTab?: EQTab }) {
   const supabase = createClient()

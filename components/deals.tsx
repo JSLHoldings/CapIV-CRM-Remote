@@ -16,7 +16,7 @@ import {
   Users, Heart, Bookmark, Eye, BarChart3, CheckCircle2, XCircle,
   AlertCircle, Loader2, RefreshCw, FileText, Clock, Shield
 } from "lucide-react"
-import { SearchFilters } from "@/components/search-filters"
+import { SearchFilters, type FilterOptions } from "@/components/search-filters"
 import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
 
@@ -184,9 +184,9 @@ export function Deals() {
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [pipelineResult, setPipelineResult] = useState<OSPipelineResult | null>(null)
-  const [filters, setFilters] = useState({
-    status: [] as string[], assetType: [] as string[], location: [] as string[],
-    riskProfile: [] as string[], investmentSize: { min: "", max: "" }, role: [] as string[],
+  const [filters, setFilters] = useState<FilterOptions>({
+    status: [], assetType: [], location: [],
+    riskProfile: [], investmentSize: { min: "", max: "" }, role: [],
   })
   const [sortBy, setSortBy] = useState("date")
 
@@ -226,15 +226,15 @@ export function Deals() {
         deal.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
         deal.assetType.toLowerCase().includes(searchTerm.toLowerCase()) ||
         deal.sponsor.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesStatus = !filters.status.length || filters.status.includes(deal.status)
-      const matchesAssetType = !filters.assetType.length || filters.assetType.includes(deal.assetType)
+      const matchesStatus = !filters.status?.length || filters.status.includes(deal.status)
+      const matchesAssetType = !filters.assetType?.length || filters.assetType.includes(deal.assetType)
       const matchesLocation =
-        !filters.location.length ||
+        !filters.location?.length ||
         filters.location.some((loc) => deal.location.toLowerCase().includes(loc.toLowerCase()))
-      const matchesRisk = !filters.riskProfile.length || filters.riskProfile.includes(deal.riskProfile)
+      const matchesRisk = !filters.riskProfile?.length || filters.riskProfile.includes(deal.riskProfile)
       const dealSizeNum = parseFloat(deal.dealSize.replace(/[$M,B]/gi, "")) || 0
-      const minSize = filters.investmentSize.min ? parseFloat(filters.investmentSize.min) : 0
-      const maxSize = filters.investmentSize.max ? parseFloat(filters.investmentSize.max) : Infinity
+      const minSize = filters.investmentSize?.min ? parseFloat(filters.investmentSize.min) : 0
+      const maxSize = filters.investmentSize?.max ? parseFloat(filters.investmentSize.max) : Infinity
       const matchesSize = dealSizeNum >= minSize && dealSizeNum <= maxSize
       return matchesSearch && matchesStatus && matchesAssetType && matchesLocation && matchesRisk && matchesSize
     })
@@ -268,6 +268,13 @@ export function Deals() {
     }))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Clear all search filters ──
+  const handleClearFilters = useCallback(() => {
+    setSearchTerm("")
+    setFilters({ status: [], assetType: [], location: [], riskProfile: [], investmentSize: { min: "", max: "" }, role: [] })
+    setSortBy("date")
+  }, [])
+
   // ── Bookmark (local only) ──
   const handleBookmarkDeal = useCallback((dealId: string) => {
     setDeals((prev) => prev.map((d) => d.id === dealId ? { ...d, isBookmarked: !d.isBookmarked } : d))
@@ -279,9 +286,12 @@ export function Deals() {
     if (!form.title || !form.sponsor || !form.location || !form.dealSize) return
     setIsSaving(true)
 
-    const draftDeal = { ...form, views: 0, likes: 0, progress: 0, investors: 0, currentRaise: "$0",
-      keyMetrics: { capRate: "—", noi: "—", occupancy: "—", yearBuilt: "—" }, timeline: [] }
-    const pipeline = runOSPipeline(draftDeal as Omit<Deal, "id">)
+    const draftDeal: Omit<Deal, "id"> = {
+      ...form, views: 0, likes: 0, progress: 0, investors: 0, currentRaise: "$0",
+      keyMetrics: { capRate: "—", noi: "—", occupancy: "—", yearBuilt: "—" }, timeline: [],
+      status: "Active", dateAdded: new Date().toISOString().split("T")[0],
+    }
+    const pipeline = runOSPipeline(draftDeal)
     setPipelineResult(pipeline)
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -314,12 +324,6 @@ export function Deals() {
         metadata: { deal_title: form.title, pipeline_outcome: pipeline.outcome } })
     }
   }, [form]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleClearFilters = () => {
-    setFilters({ status: [], assetType: [], location: [], riskProfile: [],
-      investmentSize: { min: "", max: "" }, role: [] })
-    setSearchTerm("")
-  }
 
   // ── Color helpers ──
   const getStatusColor = (status: Deal["status"]) => {
@@ -400,10 +404,14 @@ export function Deals() {
 
       {/* Filters */}
       <SearchFilters
+        searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        onFilter={setFilters}
-        onSort={setSortBy}
-        onClear={handleClearFilters}
+        filters={filters}
+        onFiltersChange={setFilters}
+        sortBy={sortBy}
+        onSortChange={setSortBy}
+        resultCount={filteredDeals.length}
+        onClearFilters={handleClearFilters}
       />
 
       {/* Deal Grid */}

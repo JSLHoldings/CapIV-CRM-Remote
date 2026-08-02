@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert stream to buffer then to base64
+    if (!result.stream) {
+      return NextResponse.json({ error: 'File stream unavailable' }, { status: 500 })
+    }
     const chunks: Uint8Array[] = []
     const reader = result.stream.getReader()
     

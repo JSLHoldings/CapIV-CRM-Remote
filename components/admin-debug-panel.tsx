@@ -82,7 +82,7 @@ export function AdminDebugPanel() {
   }
 
   const handleMockLogin = () => {
-    login(mockUser.email, "password", mockUser.accountType)
+    login(mockUser.email, "password")
     console.log("[v0] Mock user logged in:", mockUser)
   }
 
@@ -121,9 +121,9 @@ export function AdminDebugPanel() {
       },
     }
 
-    verification.completeNDA(mockData.ndaSignature)
+    verification.signNDA(mockData.ndaSignature, "")
     verification.completeKYC(mockData.kycInquiryId)
-    verification.completeCompanyInfo(mockData.companyInfo)
+    verification.submitCompanyInfo(mockData.companyInfo as unknown as Parameters<typeof verification.submitCompanyInfo>[0])
     console.log("[v0] Verification completed with mock data")
   }
 
@@ -467,8 +467,6 @@ export function AdminDebugPanel() {
                       {
                         currentStep: verification.currentStep,
                         ndaSigned: verification.ndaSigned,
-                        ndaSignature: verification.ndaSignature,
-                        ndaDate: verification.ndaDate,
                         kycCompleted: verification.kycCompleted,
                         kycInquiryId: verification.kycInquiryId,
                         companyInfo: verification.companyInfo,

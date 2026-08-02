@@ -187,7 +187,7 @@ export function NDASigningComponent() {
               <Button
                 type="submit"
                 className="flex-1 bg-secondary hover:bg-secondary/90 text-secondary-foreground"
-                disabled={!agreed || !signature.trim()}
+                disabled={!agreed || !signatureName.trim()}
               >
                 Sign and Continue
               </Button>

@@ -37,6 +37,7 @@ export function CompanyInformationSurvey() {
     primaryContactTitle: "",
     primaryContactEmail: "",
     primaryContactPhone: "",
+    contacts: [],
     businessDescription: "",
     dealInvestmentFocus: [],
     investmentStrategy: "",

@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, X, SlidersHorizontal } from "lucide-react"
 
-interface FilterOptions {
+export interface FilterOptions {
   status?: string[]
   assetType?: string[]
   location?: string[]
@@ -81,7 +81,8 @@ export function SearchFilters({
     onFiltersChange({
       ...filters,
       investmentSize: {
-        ...filters.investmentSize,
+        min: filters.investmentSize?.min ?? "",
+        max: filters.investmentSize?.max ?? "",
         [type]: value,
       },
     })

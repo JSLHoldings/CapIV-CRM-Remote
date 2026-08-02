@@ -9,6 +9,7 @@ export type ActivityCategory =
   | "verification"
   | "navigation"
   | "admin"
+  | "security"
   | "general"
 
 export interface ActivityPayload {
