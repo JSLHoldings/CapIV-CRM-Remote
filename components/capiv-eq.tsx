@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import { createClient } from "@/lib/supabase/client"
+import { logActivity } from "@/lib/activity"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -337,9 +339,12 @@ function StatCard({
 type EQTab = "classify" | "rules" | "decisions" | "overrides"
 
 export function CapIVEQWorkspace({ defaultTab = "classify" }: { defaultTab?: EQTab }) {
+  const supabase = createClient()
   const [activeTab, setActiveTab] = useState<EQTab>(defaultTab)
   const [rules, setRules] = useState<GovernanceRule[]>(INITIAL_RULES)
   const [decisions, setDecisions] = useState<DecisionResult[]>(INITIAL_DECISIONS)
+  const [isSavingDecision, setIsSavingDecision] = useState(false)
+  const [isSavingOverride, setIsSavingOverride] = useState(false)
 
   // ── Classify / Decision Engine state ──────────────────────────────────────
   const [request, setRequest] = useState<CapitalRequest>({
@@ -393,28 +398,47 @@ export function CapIVEQWorkspace({ defaultTab = "classify" }: { defaultTab?: EQT
     setPendingResult({ request: { ...request }, ...result })
   }, [request, rules])
 
-  const handleCommitDecision = useCallback(() => {
+  // ── Commit decision: persist to intelligence_signals then update local state ──
+  const handleCommitDecision = useCallback(async () => {
     if (!pendingResult) return
+    setIsSavingDecision(true)
+
+    const { data: { user } } = await supabase.auth.getUser()
     const newDecision: DecisionResult = {
       id: `dec-${String(decisions.length + 1).padStart(3, "0")}`,
       ...pendingResult,
       timestamp: new Date().toISOString(),
       overridden: false,
     }
+
+    if (user) {
+      const { error } = await supabase.from("intelligence_signals").insert({
+        user_id: user.id,
+        signal_type: "capital_action",
+        sponsor_name: pendingResult.request.sponsorName,
+        source_type: pendingResult.request.sourceType,
+        source_classification: pendingResult.request.sourceClassification,
+        amount: pendingResult.request.amount,
+        asset_class: pendingResult.request.assetClass,
+        jurisdiction: pendingResult.request.jurisdiction,
+        risk_rating: pendingResult.request.riskRating,
+        decision_status: pendingResult.status,
+        triggered_rules: pendingResult.triggeredRules,
+        reasoning: pendingResult.reasoning,
+        overridden: false,
+        downstream_updates: { notes: pendingResult.request.notes },
+      })
+      if (error) console.error("[v0] Intelligence signal persist error:", error.message)
+      else void logActivity({ action: `Capital decision: ${pendingResult.status}`, category: "compliance",
+        metadata: { sponsor: pendingResult.request.sponsorName, status: pendingResult.status } })
+    }
+
     setDecisions((prev) => [newDecision, ...prev])
     setPendingResult(null)
-    setRequest({
-      sourceType: "",
-      sourceClassification: "",
-      amount: "",
-      assetClass: "",
-      jurisdiction: "",
-      riskRating: "",
-      sponsorName: "",
-      notes: "",
-    })
+    setRequest({ sourceType: "", sourceClassification: "", amount: "", assetClass: "", jurisdiction: "", riskRating: "", sponsorName: "", notes: "" })
     setActiveTab("decisions")
-  }, [pendingResult, decisions.length])
+    setIsSavingDecision(false)
+  }, [pendingResult, decisions.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveRule = useCallback(() => {
     if (!ruleForm.name.trim() || !ruleForm.condition.trim()) return
@@ -439,28 +463,48 @@ export function CapIVEQWorkspace({ defaultTab = "classify" }: { defaultTab?: EQT
     setRules((prev) => prev.filter((r) => r.id !== id))
   }, [])
 
-  const handleOverride = useCallback(() => {
+  // ── Override: update intelligence_signals row + local state ──
+  const handleOverride = useCallback(async () => {
     setOverrideError("")
     if (!overrideForm.decisionId || !overrideForm.reason.trim() || !overrideForm.authority.trim() || !overrideForm.approvedBy.trim()) {
       setOverrideError("All fields are required to submit an override.")
       return
     }
+    setIsSavingOverride(true)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    // Find the matched decision to look up its sponsor/signal
+    const targetDecision = decisions.find((d) => d.id === overrideForm.decisionId)
+
+    if (user && targetDecision) {
+      // Try to update the DB row if it was persisted (matching on sponsor + status)
+      const { error } = await supabase.from("intelligence_signals")
+        .update({
+          decision_status: "approved",
+          overridden: true,
+          override_reason: overrideForm.reason,
+          override_authority: overrideForm.authority,
+          override_by: overrideForm.approvedBy,
+        })
+        .eq("user_id", user.id)
+        .eq("sponsor_name", targetDecision.request.sponsorName)
+        .eq("decision_status", targetDecision.status)
+      if (error) console.error("[v0] Override persist error:", error.message)
+      else void logActivity({ action: "Override applied", category: "compliance",
+        metadata: { decision_id: overrideForm.decisionId, authority: overrideForm.authority, approved_by: overrideForm.approvedBy } })
+    }
+
     setDecisions((prev) =>
       prev.map((d) =>
         d.id === overrideForm.decisionId
-          ? {
-              ...d,
-              status: "approved" as DecisionStatus,
-              overridden: true,
-              overrideReason: overrideForm.reason,
-              overrideAuthority: overrideForm.authority,
-              overrideBy: overrideForm.approvedBy,
-            }
+          ? { ...d, status: "approved" as DecisionStatus, overridden: true,
+              overrideReason: overrideForm.reason, overrideAuthority: overrideForm.authority, overrideBy: overrideForm.approvedBy }
           : d,
       ),
     )
     setOverrideForm({ decisionId: "", authority: "", reason: "", approvedBy: "" })
-  }, [overrideForm])
+    setIsSavingOverride(false)
+  }, [overrideForm, decisions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ────────────────────────────────────────────────────────────────────────────
 
@@ -736,10 +780,12 @@ export function CapIVEQWorkspace({ defaultTab = "classify" }: { defaultTab?: EQT
 
                     <Button
                       onClick={handleCommitDecision}
+                      disabled={isSavingDecision}
                       className="w-full bg-slate-800 hover:bg-slate-700 text-white text-sm h-9 gap-2"
                     >
-                      <FileText className="w-3.5 h-3.5" />
-                      Log Decision to Record
+                      {isSavingDecision
+                        ? <><span className="h-3.5 w-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />Saving to Supabase...</>
+                        : <><FileText className="w-3.5 h-3.5" />Log Decision to Record</>}
                     </Button>
                   </CardContent>
                 </Card>
@@ -1058,10 +1104,12 @@ export function CapIVEQWorkspace({ defaultTab = "classify" }: { defaultTab?: EQT
 
                 <Button
                   onClick={handleOverride}
+                  disabled={isSavingOverride}
                   className="w-full bg-purple-600 hover:bg-purple-500 text-white text-sm h-9 gap-2"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Authorize Override
+                  {isSavingOverride
+                    ? <><span className="h-3.5 w-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />Saving Override...</>
+                    : <><CheckCircle2 className="w-3.5 h-3.5" />Authorize Override</>}
                 </Button>
               </CardContent>
             </Card>

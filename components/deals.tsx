@@ -1,19 +1,42 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { ArrowRight, Plus, MapPin, DollarSign, Calendar, Building, Upload, FileText, TrendingUp, Users, Star, Heart, Share2, Bookmark, Eye, Download, MessageCircle, BarChart3, PieChart, Activity } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Progress } from "@/components/ui/progress"
+import {
+  ArrowRight, Plus, MapPin, DollarSign, Calendar, Building, TrendingUp,
+  Users, Heart, Bookmark, Eye, BarChart3, CheckCircle2, XCircle,
+  AlertCircle, Loader2, RefreshCw, FileText, Clock, Shield
+} from "lucide-react"
 import { SearchFilters } from "@/components/search-filters"
+import { createClient } from "@/lib/supabase/client"
+import { logActivity } from "@/lib/activity"
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface OSPipelineStage {
+  stage: string
+  status: "pass" | "fail" | "warn"
+  note: string
+}
+
+interface OSPipelineResult {
+  outcome: "clear" | "flagged" | "blocked"
+  stages: OSPipelineStage[]
+  runAt: string
+}
 
 interface Deal {
   id: string
+  user_id?: string
   title: string
   location: string
   assetType: string
@@ -26,7 +49,6 @@ interface Deal {
   dateAdded: string
   investmentType: "Equity" | "Debt" | "Hybrid"
   riskProfile: "Core" | "Core-Plus" | "Value-Add" | "Opportunistic"
-  // Enhanced interactive data
   views: number
   likes: number
   isLiked?: boolean
@@ -36,1268 +58,646 @@ interface Deal {
   minimumInvestment: string
   currentRaise: string
   maxRaise: string
-  images?: string[]
-  keyMetrics: {
-    capRate: string
-    noi: string
-    occupancy: string
-    yearBuilt: string
-  }
-  timeline: Array<{
-    date: string
-    milestone: string
-    status: "completed" | "pending" | "upcoming"
-  }>
+  keyMetrics: { capRate: string; noi: string; occupancy: string; yearBuilt: string }
+  timeline: Array<{ date: string; milestone: string; status: "completed" | "pending" | "upcoming" }>
+  osPipelineResult?: OSPipelineResult
 }
 
+// ── OS Execution Pipeline ──────────────────────────────────────────────────────
+// Implements the 7-stage CapIV OS pipeline: Identity → Permissions → Intelligence
+// → Compliance → Execution → Distribution → Audit Log
+
+function runOSPipeline(deal: Omit<Deal, "id">): OSPipelineResult {
+  const stages: OSPipelineStage[] = []
+
+  // 1. Identity Layer — sponsor name present and non-empty
+  const identityPass = deal.sponsor.trim().length > 0
+  stages.push({
+    stage: "Identity",
+    status: identityPass ? "pass" : "fail",
+    note: identityPass ? "Sponsor identity confirmed" : "Sponsor name missing — identity check failed",
+  })
+
+  // 2. Permissions Layer — investment type permitted
+  const permittedTypes = ["Equity", "Debt", "Hybrid"]
+  const permissionsPass = permittedTypes.includes(deal.investmentType)
+  stages.push({
+    stage: "Permissions",
+    status: permissionsPass ? "pass" : "fail",
+    note: permissionsPass
+      ? `Investment type '${deal.investmentType}' is within permitted mandate`
+      : `Investment type '${deal.investmentType}' not in permitted set`,
+  })
+
+  // 3. Intelligence — risk profiling
+  const highRisk = deal.riskProfile === "Opportunistic"
+  stages.push({
+    stage: "Intelligence",
+    status: highRisk ? "warn" : "pass",
+    note: highRisk
+      ? "Opportunistic risk profile detected — elevated IQ scrutiny required"
+      : `Risk profile '${deal.riskProfile}' within standard IQ thresholds`,
+  })
+
+  // 4. Compliance — deal size parseable and > $0
+  const sizeNum = parseFloat(deal.dealSize.replace(/[$M,B]/gi, "")) || 0
+  const compliancePass = sizeNum > 0
+  stages.push({
+    stage: "Compliance",
+    status: compliancePass ? "pass" : "fail",
+    note: compliancePass
+      ? `Deal size ${deal.dealSize} cleared compliance threshold`
+      : "Deal size could not be validated — compliance check failed",
+  })
+
+  // 5. Execution — target return populated
+  const execPass = deal.targetReturn.trim().length > 0
+  stages.push({
+    stage: "Execution",
+    status: execPass ? "pass" : "warn",
+    note: execPass ? `Target return ${deal.targetReturn} logged` : "Target return not specified — execution parameters incomplete",
+  })
+
+  // 6. Distribution — hold period set
+  const distPass = deal.holdPeriod.trim().length > 0
+  stages.push({
+    stage: "Distribution",
+    status: distPass ? "pass" : "warn",
+    note: distPass ? `Hold period ${deal.holdPeriod} confirmed` : "Hold period not set — distribution timeline unclear",
+  })
+
+  // 7. Audit Log — always generated
+  stages.push({
+    stage: "Audit Log",
+    status: "pass",
+    note: `Pipeline executed at ${new Date().toISOString()} — all stages recorded`,
+  })
+
+  const failures = stages.filter((s) => s.status === "fail").length
+  const warnings = stages.filter((s) => s.status === "warn").length
+  const outcome: OSPipelineResult["outcome"] =
+    failures > 0 ? "blocked" : warnings > 0 ? "flagged" : "clear"
+
+  return { outcome, stages, runAt: new Date().toISOString() }
+}
+
+// ── DB helpers ─────────────────────────────────────────────────────────────────
+
+function dbRowToDeal(row: Record<string, unknown>): Deal {
+  return {
+    id: row.id as string,
+    user_id: row.user_id as string,
+    title: row.title as string,
+    location: row.location as string,
+    assetType: row.asset_type as string,
+    dealSize: row.deal_size as string,
+    status: row.status as Deal["status"],
+    sponsor: row.sponsor as string,
+    targetReturn: (row.target_return as string) ?? "",
+    holdPeriod: (row.hold_period as string) ?? "",
+    description: (row.description as string) ?? "",
+    dateAdded: (row.date_added as string).split("T")[0],
+    investmentType: (row.investment_type as Deal["investmentType"]) ?? "Equity",
+    riskProfile: (row.risk_profile as Deal["riskProfile"]) ?? "Value-Add",
+    views: (row.views as number) ?? 0,
+    likes: (row.likes as number) ?? 0,
+    progress: (row.progress as number) ?? 0,
+    investors: (row.investors as number) ?? 0,
+    minimumInvestment: (row.minimum_investment as string) ?? "$0",
+    currentRaise: (row.current_raise as string) ?? "$0",
+    maxRaise: (row.max_raise as string) ?? "$0",
+    keyMetrics: (row.key_metrics as Deal["keyMetrics"]) ?? { capRate: "—", noi: "—", occupancy: "—", yearBuilt: "—" },
+    timeline: (row.timeline as Deal["timeline"]) ?? [],
+    osPipelineResult: row.os_pipeline_result as OSPipelineResult | undefined,
+  }
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
+
 export function Deals() {
+  const supabase = createClient()
   const [deals, setDeals] = useState<Deal[]>([])
   const [filteredDeals, setFilteredDeals] = useState<Deal[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [isOMDialogOpen, setIsOMDialogOpen] = useState(false)
-  const [selectedDealForOM, setSelectedDealForOM] = useState<Deal | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [pipelineResult, setPipelineResult] = useState<OSPipelineResult | null>(null)
   const [filters, setFilters] = useState({
-    status: [],
-    assetType: [],
-    location: [],
-    riskProfile: [],
-    investmentSize: { min: "", max: "" },
-    role: [],
+    status: [] as string[], assetType: [] as string[], location: [] as string[],
+    riskProfile: [] as string[], investmentSize: { min: "", max: "" }, role: [] as string[],
   })
   const [sortBy, setSortBy] = useState("date")
 
-  useEffect(() => {
-    const sampleDeals: Deal[] = [
-      {
-        id: "1",
-        title: "Downtown Mixed-Use Development",
-        location: "Los Angeles, CA",
-        assetType: "Mixed-Use",
-        dealSize: "$45M",
-        status: "Active",
-        sponsor: "Urban Axis Capital",
-        targetReturn: "18-22%",
-        holdPeriod: "5-7 years",
-        description: "Prime downtown location with retail and residential components. Opportunity Zone qualified. This mixed-use development represents a unique opportunity to invest in a rapidly gentrifying neighborhood with strong demographic trends and limited new supply.",
-        dateAdded: "2025-01-15",
-        investmentType: "Equity",
-        riskProfile: "Value-Add",
-        views: 1247,
-        likes: 89,
-        isLiked: false,
-        isBookmarked: false,
-        progress: 68,
-        investors: 23,
-        minimumInvestment: "$100,000",
-        currentRaise: "$30.6M",
-        maxRaise: "$45M",
-        images: ["/modern-apartment-building.png"],
-        keyMetrics: {
-          capRate: "5.2%",
-          noi: "$2.34M",
-          occupancy: "87%",
-          yearBuilt: "2024"
-        },
-        timeline: [
-          { date: "2024-01-15", milestone: "Land Acquisition", status: "completed" },
-          { date: "2024-06-01", milestone: "Construction Start", status: "completed" },
-          { date: "2025-03-01", milestone: "Construction Completion", status: "upcoming" },
-          { date: "2025-06-01", milestone: "Leasing Launch", status: "upcoming" }
-        ]
-      },
-      {
-        id: "2",
-        title: "Industrial Logistics Portfolio",
-        location: "Phoenix, AZ",
-        assetType: "Industrial",
-        dealSize: "$120M",
-        status: "Under Review",
-        sponsor: "Pacific Real Estate Partners",
-        targetReturn: "12-15%",
-        holdPeriod: "3-5 years",
-        description: "Class A industrial properties with long-term triple net leases to investment grade tenants. This portfolio consists of 5 strategically located distribution centers serving major e-commerce and logistics companies.",
-        dateAdded: "2025-01-10",
-        investmentType: "Equity",
-        riskProfile: "Core-Plus",
-        views: 892,
-        likes: 45,
-        isLiked: true,
-        isBookmarked: true,
-        progress: 42,
-        investors: 18,
-        minimumInvestment: "$250,000",
-        currentRaise: "$50.4M",
-        maxRaise: "$120M",
-        images: ["/bustling-shopping-center.png"],
-        keyMetrics: {
-          capRate: "6.8%",
-          noi: "$8.16M",
-          occupancy: "98%",
-          yearBuilt: "2022"
-        },
-        timeline: [
-          { date: "2024-08-01", milestone: "Due Diligence Start", status: "completed" },
-          { date: "2025-01-01", milestone: "Legal Review", status: "pending" },
-          { date: "2025-02-15", milestone: "Final Approval", status: "upcoming" },
-          { date: "2025-03-01", milestone: "Closing", status: "upcoming" }
-        ]
-      },
-      {
-        id: "3",
-        title: "Luxury Multifamily Complex",
-        location: "Austin, TX",
-        assetType: "Multifamily",
-        dealSize: "$85M",
-        status: "Pending",
-        sponsor: "Metropolitan Investment Group",
-        targetReturn: "15-18%",
-        holdPeriod: "4-6 years",
-        description: "350-unit luxury apartment complex in high-growth submarket with value-add opportunities. Located in Austin's tech corridor with proximity to major employers and entertainment districts.",
-        dateAdded: "2025-01-08",
-        investmentType: "Equity",
-        riskProfile: "Value-Add",
-        views: 1567,
-        likes: 112,
-        isLiked: false,
-        isBookmarked: false,
-        progress: 85,
-        investors: 31,
-        minimumInvestment: "$75,000",
-        currentRaise: "$72.25M",
-        maxRaise: "$85M",
-        images: ["/modern-apartment-living.png"],
-        keyMetrics: {
-          capRate: "4.8%",
-          noi: "$4.08M",
-          occupancy: "92%",
-          yearBuilt: "2023"
-        },
-        timeline: [
-          { date: "2024-11-01", milestone: "Marketing Launch", status: "completed" },
-          { date: "2025-01-01", milestone: "Investor Presentations", status: "completed" },
-          { date: "2025-02-01", milestone: "Final Close", status: "pending" },
-          { date: "2025-03-01", milestone: "Fund Operations", status: "upcoming" }
-        ]
-      },
-      {
-        id: "4",
-        title: "Office Building Acquisition",
-        location: "Denver, CO",
-        assetType: "Office",
-        dealSize: "$65M",
-        status: "Active",
-        sponsor: "Rocky Mountain Capital",
-        targetReturn: "10-13%",
-        holdPeriod: "7-10 years",
-        description: "Class A office building with stable tenant base and below-market rents. Located in Denver's central business district with excellent transportation access and modern amenities.",
-        dateAdded: "2025-01-05",
-        investmentType: "Equity",
-        riskProfile: "Core",
-        views: 743,
-        likes: 67,
-        isLiked: true,
-        isBookmarked: false,
-        progress: 31,
-        investors: 12,
-        minimumInvestment: "$150,000",
-        currentRaise: "$20.15M",
-        maxRaise: "$65M",
-        images: ["/modern-apartment-building.png"],
-        keyMetrics: {
-          capRate: "5.5%",
-          noi: "$3.575M",
-          occupancy: "95%",
-          yearBuilt: "2018"
-        },
-        timeline: [
-          { date: "2024-12-01", milestone: "Market Analysis", status: "completed" },
-          { date: "2025-01-01", milestone: "Investment Launch", status: "completed" },
-          { date: "2025-04-01", milestone: "Due Diligence", status: "upcoming" },
-          { date: "2025-06-01", milestone: "Closing", status: "upcoming" }
-        ]
-      },
-      {
-        id: "5",
-        title: "Retail Strip Center",
-        location: "Miami, FL",
-        assetType: "Retail",
-        dealSize: "$28M",
-        status: "Closed",
-        sponsor: "Sunshine Properties",
-        targetReturn: "14-17%",
-        holdPeriod: "3-5 years",
-        description: "Anchored retail center with renovation and re-leasing opportunities. Located in high-traffic area with strong local demographics and redevelopment potential.",
-        dateAdded: "2024-12-20",
-        investmentType: "Equity",
-        riskProfile: "Opportunistic",
-        views: 445,
-        likes: 23,
-        isLiked: false,
-        isBookmarked: true,
-        progress: 100,
-        investors: 15,
-        minimumInvestment: "$50,000",
-        currentRaise: "$28M",
-        maxRaise: "$28M",
-        images: ["/bustling-shopping-center.png"],
-        keyMetrics: {
-          capRate: "7.2%",
-          noi: "$2.016M",
-          occupancy: "78%",
-          yearBuilt: "2015"
-        },
-        timeline: [
-          { date: "2024-12-01", milestone: "Fundraising Launch", status: "completed" },
-          { date: "2024-12-20", milestone: "Full Subscription", status: "completed" },
-          { date: "2025-01-15", milestone: "Closing", status: "completed" },
-          { date: "2025-02-01", milestone: "Asset Management", status: "completed" }
-        ]
-      },
-      {
-        id: "6",
-        title: "Student Housing Development",
-        location: "Chapel Hill, NC",
-        assetType: "Student Housing",
-        dealSize: "$52M",
-        status: "Active",
-        sponsor: "Education Realty Partners",
-        targetReturn: "16-20%",
-        holdPeriod: "5-7 years",
-        description: "Purpose-built student housing near major university campus with guaranteed occupancy. Modern amenities and proximity to campus create strong rental demand.",
-        dateAdded: "2024-12-15",
-        investmentType: "Equity",
-        riskProfile: "Value-Add",
-        views: 987,
-        likes: 78,
-        isLiked: false,
-        isBookmarked: false,
-        progress: 56,
-        investors: 19,
-        minimumInvestment: "$80,000",
-        currentRaise: "$29.12M",
-        maxRaise: "$52M",
-        images: ["/modern-apartment-living.png"],
-        keyMetrics: {
-          capRate: "6.1%",
-          noi: "$3.172M",
-          occupancy: "100%",
-          yearBuilt: "2024"
-        },
-        timeline: [
-          { date: "2024-10-01", milestone: "Construction Start", status: "completed" },
-          { date: "2024-12-01", milestone: "Investment Launch", status: "completed" },
-          { date: "2025-08-01", milestone: "Construction Complete", status: "upcoming" },
-          { date: "2025-09-01", milestone: "Student Move-in", status: "upcoming" }
-        ]
-      },
-    ]
-    setDeals(sampleDeals)
-    setFilteredDeals(sampleDeals)
-  }, [])
+  // New deal form state
+  const [form, setForm] = useState({
+    title: "", sponsor: "", location: "", assetType: "Multifamily",
+    dealSize: "", investmentType: "Equity" as Deal["investmentType"],
+    riskProfile: "Value-Add" as Deal["riskProfile"], targetReturn: "",
+    holdPeriod: "", description: "", minimumInvestment: "", maxRaise: "",
+  })
 
+  // ── Load from Supabase ──
+  const loadDeals = useCallback(async () => {
+    setIsLoading(true)
+    const { data, error } = await supabase
+      .from("deals")
+      .select("*")
+      .order("date_added", { ascending: false })
+
+    if (error) {
+      console.error("[v0] Deals load error:", error.message)
+    } else {
+      const mapped = (data ?? []).map(dbRowToDeal)
+      setDeals(mapped)
+      setFilteredDeals(mapped)
+    }
+    setIsLoading(false)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { void loadDeals() }, [loadDeals])
+
+  // ── Filter + Sort ──
   useEffect(() => {
-    const filtered = deals.filter((deal) => {
-      // Text search
+    let filtered = deals.filter((deal) => {
       const matchesSearch =
         deal.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         deal.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
         deal.assetType.toLowerCase().includes(searchTerm.toLowerCase()) ||
         deal.sponsor.toLowerCase().includes(searchTerm.toLowerCase())
-
-      // Status filter
-      const matchesStatus = !filters.status?.length || filters.status.includes(deal.status)
-
-      // Asset type filter
-      const matchesAssetType = !filters.assetType?.length || filters.assetType.includes(deal.assetType)
-
-      // Location filter (check if deal location contains any of the filtered locations)
+      const matchesStatus = !filters.status.length || filters.status.includes(deal.status)
+      const matchesAssetType = !filters.assetType.length || filters.assetType.includes(deal.assetType)
       const matchesLocation =
-        !filters.location?.length ||
+        !filters.location.length ||
         filters.location.some((loc) => deal.location.toLowerCase().includes(loc.toLowerCase()))
-
-      // Risk profile filter
-      const matchesRiskProfile = !filters.riskProfile?.length || filters.riskProfile.includes(deal.riskProfile)
-
-      // Investment size filter
-      const dealSizeNum = Number.parseFloat(deal.dealSize.replace(/[$M,]/g, ""))
-      const minSize = filters.investmentSize?.min ? Number.parseFloat(filters.investmentSize.min) : 0
-      const maxSize = filters.investmentSize?.max
-        ? Number.parseFloat(filters.investmentSize.max)
-        : Number.POSITIVE_INFINITY
+      const matchesRisk = !filters.riskProfile.length || filters.riskProfile.includes(deal.riskProfile)
+      const dealSizeNum = parseFloat(deal.dealSize.replace(/[$M,B]/gi, "")) || 0
+      const minSize = filters.investmentSize.min ? parseFloat(filters.investmentSize.min) : 0
+      const maxSize = filters.investmentSize.max ? parseFloat(filters.investmentSize.max) : Infinity
       const matchesSize = dealSizeNum >= minSize && dealSizeNum <= maxSize
-
-      return matchesSearch && matchesStatus && matchesAssetType && matchesLocation && matchesRiskProfile && matchesSize
+      return matchesSearch && matchesStatus && matchesAssetType && matchesLocation && matchesRisk && matchesSize
     })
-
-    // Apply sorting
     filtered.sort((a, b) => {
       switch (sortBy) {
-        case "name":
-          return a.title.localeCompare(b.title)
-        case "name-desc":
-          return b.title.localeCompare(a.title)
-        case "date":
-          return new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
-        case "size":
-          return (
-            Number.parseFloat(b.dealSize.replace(/[$M,]/g, "")) - Number.parseFloat(a.dealSize.replace(/[$M,]/g, ""))
-          )
-        case "return":
-          return Number.parseFloat(b.targetReturn.split("-")[0]) - Number.parseFloat(a.targetReturn.split("-")[0])
-        default:
-          return 0
+        case "name": return a.title.localeCompare(b.title)
+        case "name-desc": return b.title.localeCompare(a.title)
+        case "size": return parseFloat(b.dealSize.replace(/[$M,B]/gi, "")) - parseFloat(a.dealSize.replace(/[$M,B]/gi, ""))
+        case "return": return parseFloat(b.targetReturn.split("-")[0]) - parseFloat(a.targetReturn.split("-")[0])
+        default: return new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
       }
     })
-
     setFilteredDeals(filtered)
   }, [deals, searchTerm, filters, sortBy])
 
-  const getStatusColor = (status: Deal["status"]) => {
-    switch (status) {
-      case "Active":
-        return "bg-success/10 text-success"
-      case "Pending":
-        return "bg-warning/10 text-warning-foreground"
-      case "Under Review":
-        return "bg-info/10 text-info"
-      case "Closed":
-        return "bg-muted text-muted-foreground"
-      default:
-        return "bg-muted text-muted-foreground"
+  // ── Increment view count ──
+  const handleViewDeal = useCallback(async (deal: Deal) => {
+    setSelectedDeal(deal)
+    const newViews = deal.views + 1
+    setDeals((prev) => prev.map((d) => d.id === deal.id ? { ...d, views: newViews } : d))
+    await supabase.from("deals").update({ views: newViews }).eq("id", deal.id)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Like ──
+  const handleLikeDeal = useCallback(async (dealId: string) => {
+    setDeals((prev) => prev.map((d) => {
+      if (d.id !== dealId) return d
+      const liked = !d.isLiked
+      supabase.from("deals").update({ likes: liked ? d.likes + 1 : d.likes - 1 }).eq("id", dealId)
+      return { ...d, isLiked: liked, likes: liked ? d.likes + 1 : d.likes - 1 }
+    }))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Bookmark (local only) ──
+  const handleBookmarkDeal = useCallback((dealId: string) => {
+    setDeals((prev) => prev.map((d) => d.id === dealId ? { ...d, isBookmarked: !d.isBookmarked } : d))
+  }, [])
+
+  // ── Submit new deal: run OS pipeline then persist ──
+  const handleAddDeal = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.title || !form.sponsor || !form.location || !form.dealSize) return
+    setIsSaving(true)
+
+    const draftDeal = { ...form, views: 0, likes: 0, progress: 0, investors: 0, currentRaise: "$0",
+      keyMetrics: { capRate: "—", noi: "—", occupancy: "—", yearBuilt: "—" }, timeline: [] }
+    const pipeline = runOSPipeline(draftDeal as Omit<Deal, "id">)
+    setPipelineResult(pipeline)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setIsSaving(false); return }
+
+    const { data, error } = await supabase.from("deals").insert({
+      user_id: user.id,
+      title: form.title,
+      sponsor: form.sponsor,
+      location: form.location,
+      asset_type: form.assetType,
+      deal_size: form.dealSize,
+      investment_type: form.investmentType,
+      risk_profile: form.riskProfile,
+      target_return: form.targetReturn,
+      hold_period: form.holdPeriod,
+      description: form.description,
+      minimum_investment: form.minimumInvestment,
+      max_raise: form.maxRaise,
+      status: pipeline.outcome === "blocked" ? "Under Review" : "Active",
+      os_pipeline_result: pipeline,
+    }).select().single()
+
+    setIsSaving(false)
+    if (error) { console.error("[v0] Deal insert error:", error.message); return }
+    if (data) {
+      const newDeal = dbRowToDeal(data)
+      setDeals((prev) => [newDeal, ...prev])
+      void logActivity({ action: "Submitted new deal", category: "deals",
+        metadata: { deal_title: form.title, pipeline_outcome: pipeline.outcome } })
     }
-  }
-
-  const getRiskProfileColor = (risk: Deal["riskProfile"]) => {
-    switch (risk) {
-      case "Core":
-        return "bg-primary/10 text-primary"
-      case "Core-Plus":
-        return "bg-success/10 text-success"
-      case "Value-Add":
-        return "bg-secondary/10 text-secondary"
-      case "Opportunistic":
-        return "bg-destructive/10 text-destructive"
-      default:
-        return "bg-muted text-muted-foreground"
-    }
-  }
-
-  const handleAddDeal = (newDeal: Omit<Deal, "id">) => {
-    const deal: Deal = {
-      ...newDeal,
-      id: Date.now().toString(),
-    }
-    setDeals((prev) => [...prev, deal])
-    setIsAddDialogOpen(false)
-  }
-
-  const handleSubmitOfferingMemorandum = (dealId: string, omData: any) => {
-    // Store the offering memorandum submission
-    const submissions = JSON.parse(localStorage.getItem('om-submissions') || '[]')
-    const submission = {
-      id: Date.now().toString(),
-      dealId,
-      dealTitle: deals.find(d => d.id === dealId)?.title,
-      submittedAt: new Date().toISOString(),
-      status: 'pending',
-      ...omData
-    }
-    submissions.push(submission)
-    localStorage.setItem('om-submissions', JSON.stringify(submissions))
-    setIsOMDialogOpen(false)
-    setSelectedDealForOM(null)
-  }
-
-  const handleLikeDeal = (dealId: string) => {
-    setDeals(prevDeals => 
-      prevDeals.map(deal => 
-        deal.id === dealId 
-          ? { 
-              ...deal, 
-              isLiked: !deal.isLiked, 
-              likes: deal.isLiked ? deal.likes - 1 : deal.likes + 1 
-            }
-          : deal
-      )
-    )
-  }
-
-  const handleBookmarkDeal = (dealId: string) => {
-    setDeals(prevDeals => 
-      prevDeals.map(deal => 
-        deal.id === dealId 
-          ? { ...deal, isBookmarked: !deal.isBookmarked }
-          : deal
-      )
-    )
-  }
-
-  const handleViewDeal = (dealId: string) => {
-    setDeals(prevDeals => 
-      prevDeals.map(deal => 
-        deal.id === dealId 
-          ? { ...deal, views: deal.views + 1 }
-          : deal
-      )
-    )
-  }
+  }, [form]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClearFilters = () => {
-    setFilters({
-      status: [],
-      assetType: [],
-      location: [],
-      riskProfile: [],
-      investmentSize: { min: "", max: "" },
-      role: [],
-    })
+    setFilters({ status: [], assetType: [], location: [], riskProfile: [],
+      investmentSize: { min: "", max: "" }, role: [] })
     setSearchTerm("")
+  }
+
+  // ── Color helpers ──
+  const getStatusColor = (status: Deal["status"]) => {
+    switch (status) {
+      case "Active": return "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
+      case "Pending": return "bg-amber-500/10 text-amber-300 border border-amber-500/30"
+      case "Under Review": return "bg-blue-500/10 text-blue-300 border border-blue-500/30"
+      case "Closed": return "bg-slate-700 text-slate-400"
+      default: return "bg-slate-700 text-slate-400"
+    }
+  }
+  const getRiskColor = (risk: Deal["riskProfile"]) => {
+    switch (risk) {
+      case "Core": return "bg-blue-500/10 text-blue-300"
+      case "Core-Plus": return "bg-emerald-500/10 text-emerald-300"
+      case "Value-Add": return "bg-amber-500/10 text-amber-300"
+      case "Opportunistic": return "bg-rose-500/10 text-rose-300"
+      default: return "bg-slate-700 text-slate-400"
+    }
+  }
+  const getPipelineColor = (outcome: OSPipelineResult["outcome"]) => {
+    switch (outcome) {
+      case "clear": return "text-emerald-300"
+      case "flagged": return "text-amber-300"
+      case "blocked": return "text-rose-400"
+    }
+  }
+  const getStageIcon = (status: OSPipelineStage["status"]) => {
+    if (status === "pass") return <CheckCircle2 className="h-4 w-4 text-emerald-300 flex-shrink-0" />
+    if (status === "warn") return <AlertCircle className="h-4 w-4 text-amber-300 flex-shrink-0" />
+    return <XCircle className="h-4 w-4 text-rose-400 flex-shrink-0" />
   }
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">All deals</h1>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-secondary hover:bg-secondary/90 text-secondary-foreground">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Deal
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Add New Deal</DialogTitle>
-            </DialogHeader>
-            <DealForm onSubmit={handleAddDeal} />
-          </DialogContent>
-        </Dialog>
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.35em] text-blue-400/70 mb-1">Deal Source</p>
+          <h1 className="text-2xl font-semibold text-white">Investment Opportunities</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            All deals pass through the CapIV OS execution pipeline before activation.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" size="sm" className="border-slate-700 text-slate-300" onClick={loadDeals}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+          <Button className="bg-blue-600 hover:bg-blue-500 text-white" onClick={() => { setPipelineResult(null); setIsAddDialogOpen(true) }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Deal
+          </Button>
+        </div>
       </div>
 
-      <SearchFilters
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        filters={filters}
-        onFiltersChange={setFilters}
-        sortBy={sortBy}
-        onSortChange={setSortBy}
-        resultCount={filteredDeals.length}
-        onClearFilters={handleClearFilters}
-      />
-
-      {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Left Column - Deal Summary */}
-        <div className="space-y-6">
-          <Card className="bg-muted">
-            <CardContent className="p-6">
-              <div className="text-center space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Total Deals", value: deals.length, icon: BarChart3, color: "text-blue-300" },
+          { label: "Active", value: deals.filter((d) => d.status === "Active").length, icon: TrendingUp, color: "text-emerald-300" },
+          { label: "Under Review", value: deals.filter((d) => d.status === "Under Review").length, icon: AlertCircle, color: "text-amber-300" },
+          { label: "Pipeline Blocked", value: deals.filter((d) => d.osPipelineResult?.outcome === "blocked").length, icon: Shield, color: "text-rose-400" },
+        ].map(({ label, value, icon: Icon, color }) => (
+          <Card key={label} className="bg-slate-900/80 border border-slate-800">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-2xl font-bold text-foreground">{deals.length}</div>
-                  <div className="text-sm text-muted-foreground">Total Deals</div>
+                  <p className="text-xs text-slate-400">{label}</p>
+                  <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-success">
-                    {deals.filter((d) => d.status === "Active").length}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Active</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-info">
-                    {deals.filter((d) => d.status === "Under Review").length}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Under Review</div>
-                </div>
+                <Icon className={`h-7 w-7 ${color}`} />
               </div>
             </CardContent>
           </Card>
-
-          <Button className="w-full bg-secondary hover:bg-secondary/90 text-secondary-foreground flex items-center justify-center space-x-2">
-            <span>All Deals</span>
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Right Columns - Deal Cards */}
-        <div className="lg:col-span-3">
-          <div className="mb-4 flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{filteredDeals.length} deals found</p>
-            <div className="flex space-x-2">
-              <Button size="sm" variant="outline">
-                Filter
-              </Button>
-              <Button size="sm" variant="outline">
-                Sort
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {filteredDeals.map((deal) => (
-              <DealCard
-                key={deal.id}
-                deal={deal}
-                onViewDetails={() => setSelectedDeal(deal)}
-                getStatusColor={getStatusColor}
-                getRiskProfileColor={getRiskProfileColor}
-                onLike={handleLikeDeal}
-                onBookmark={handleBookmarkDeal}
-                onView={handleViewDeal}
-              />
-            ))}
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Deal Details Dialog */}
-      <Dialog open={!!selectedDeal} onOpenChange={() => setSelectedDeal(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selectedDeal?.title}</DialogTitle>
-          </DialogHeader>
-          {selectedDeal && <DealDetails deal={selectedDeal} getRiskProfileColor={getRiskProfileColor} />}
-        </DialogContent>
-      </Dialog>
+      {/* Filters */}
+      <SearchFilters
+        onSearchChange={setSearchTerm}
+        onFilter={setFilters}
+        onSort={setSortBy}
+        onClear={handleClearFilters}
+      />
 
-      {/* Offering Memorandum Submission Dialog */}
-      <Dialog open={isOMDialogOpen} onOpenChange={setIsOMDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      {/* Deal Grid */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
+          <span className="ml-3 text-slate-400">Loading deals...</span>
+        </div>
+      ) : filteredDeals.length === 0 ? (
+        <div className="text-center py-16 text-slate-500">
+          <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
+          <p>No deals found. Add your first deal to get started.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          {filteredDeals.map((deal) => (
+            <Card
+              key={deal.id}
+              className="bg-slate-900/80 border border-slate-800 hover:border-blue-500/40 transition-colors cursor-pointer"
+              onClick={() => handleViewDeal(deal)}
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <CardTitle className="text-base font-semibold text-white leading-tight">{deal.title}</CardTitle>
+                  <Badge className={getStatusColor(deal.status)}>{deal.status}</Badge>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <MapPin className="h-3 w-3" />{deal.location}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* OS Pipeline badge */}
+                {deal.osPipelineResult && (
+                  <div className={`flex items-center gap-1.5 text-xs font-medium ${getPipelineColor(deal.osPipelineResult.outcome)}`}>
+                    <Shield className="h-3 w-3" />
+                    OS Pipeline: {deal.osPipelineResult.outcome.charAt(0).toUpperCase() + deal.osPipelineResult.outcome.slice(1)}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div><p className="text-slate-400">Sponsor</p><p className="text-white font-medium truncate">{deal.sponsor}</p></div>
+                  <div><p className="text-slate-400">Deal Size</p><p className="text-white font-medium">{deal.dealSize}</p></div>
+                  <div><p className="text-slate-400">Target Return</p><p className="text-emerald-300 font-medium">{deal.targetReturn || "—"}</p></div>
+                  <div><p className="text-slate-400">Asset Type</p><p className="text-white font-medium">{deal.assetType}</p></div>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <Badge className={getRiskColor(deal.riskProfile)}>{deal.riskProfile}</Badge>
+                  <Badge className="bg-slate-800 text-slate-300">{deal.investmentType}</Badge>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Raise Progress</span>
+                    <span>{deal.progress}%</span>
+                  </div>
+                  <Progress value={deal.progress} className="h-1.5 bg-slate-800" />
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <button className="flex items-center gap-1 hover:text-rose-400 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); handleLikeDeal(deal.id) }}>
+                      <Heart className={`h-3.5 w-3.5 ${deal.isLiked ? "fill-rose-400 text-rose-400" : ""}`} />{deal.likes}
+                    </button>
+                    <button className="flex items-center gap-1 hover:text-blue-400 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); handleBookmarkDeal(deal.id) }}>
+                      <Bookmark className={`h-3.5 w-3.5 ${deal.isBookmarked ? "fill-blue-400 text-blue-400" : ""}`} />
+                    </button>
+                    <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" />{deal.views}</span>
+                    <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{deal.investors}</span>
+                  </div>
+                  <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />{deal.dateAdded}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Deal Detail Dialog */}
+      <Dialog open={!!selectedDeal} onOpenChange={() => setSelectedDeal(null)}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto bg-slate-950 border border-slate-800 text-slate-100">
           <DialogHeader>
-            <DialogTitle>Submit Offering Memorandum</DialogTitle>
+            <DialogTitle className="text-white">Deal Detail</DialogTitle>
           </DialogHeader>
-          {selectedDealForOM && (
-            <OfferingMemorandumForm 
-              deal={selectedDealForOM} 
-              onSubmit={(omData) => handleSubmitOfferingMemorandum(selectedDealForOM.id, omData)} 
-            />
+          {selectedDeal && (
+            <div className="space-y-6">
+              <div className="flex items-start justify-between p-4 rounded-2xl border border-slate-800 bg-slate-900/80">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">{selectedDeal.title}</h3>
+                  <p className="text-sm text-slate-400 mt-1">{selectedDeal.sponsor} · {selectedDeal.location}</p>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <Badge className={getStatusColor(selectedDeal.status)}>{selectedDeal.status}</Badge>
+                  <span className="text-xl font-bold text-emerald-300">{selectedDeal.dealSize}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: "Target Return", value: selectedDeal.targetReturn || "—", icon: TrendingUp },
+                  { label: "Hold Period", value: selectedDeal.holdPeriod || "—", icon: Clock },
+                  { label: "Min. Investment", value: selectedDeal.minimumInvestment || "—", icon: DollarSign },
+                  { label: "Investors", value: String(selectedDeal.investors), icon: Users },
+                ].map(({ label, value, icon: Icon }) => (
+                  <Card key={label} className="bg-slate-900/50 border border-slate-800">
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Icon className="h-3.5 w-3.5 text-blue-300" />
+                        <p className="text-xs text-slate-400">{label}</p>
+                      </div>
+                      <p className="text-sm font-semibold text-white">{value}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {selectedDeal.description && (
+                <div>
+                  <p className="text-xs text-slate-400 mb-2 uppercase tracking-wider">Description</p>
+                  <p className="text-sm text-slate-200 leading-relaxed">{selectedDeal.description}</p>
+                </div>
+              )}
+
+              {/* Key Metrics */}
+              <div className="grid grid-cols-4 gap-3">
+                {Object.entries(selectedDeal.keyMetrics).map(([key, val]) => (
+                  <Card key={key} className="bg-slate-900/50 border border-slate-800">
+                    <CardContent className="p-3 text-center">
+                      <p className="text-lg font-bold text-white">{val}</p>
+                      <p className="text-xs text-slate-400 capitalize">{key.replace(/([A-Z])/g, " $1")}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* OS Pipeline Result */}
+              {selectedDeal.osPipelineResult && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-wider text-slate-400">OS Execution Pipeline</p>
+                    <span className={`text-sm font-bold flex items-center gap-1.5 ${getPipelineColor(selectedDeal.osPipelineResult.outcome)}`}>
+                      <Shield className="h-4 w-4" />
+                      {selectedDeal.osPipelineResult.outcome.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedDeal.osPipelineResult.stages.map((stage) => (
+                      <div key={stage.stage} className="flex items-start gap-3 p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
+                        {getStageIcon(stage.status)}
+                        <div>
+                          <p className="text-xs font-semibold text-white">{stage.stage}</p>
+                          <p className="text-xs text-slate-400">{stage.note}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline */}
+              {selectedDeal.timeline.length > 0 && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-400 mb-3">Timeline</p>
+                  <div className="space-y-2">
+                    {selectedDeal.timeline.map((t, idx) => (
+                      <div key={idx} className="flex items-center gap-3">
+                        <div className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                          t.status === "completed" ? "bg-emerald-400" :
+                          t.status === "pending" ? "bg-amber-400" : "bg-slate-600"}`} />
+                        <p className="text-xs text-slate-300">{t.date}</p>
+                        <p className="text-xs text-white">{t.milestone}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Add Deal Dialog */}
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-slate-950 border border-slate-800 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="text-white">Add New Deal</DialogTitle>
+            <p className="text-sm text-slate-400">Deal will be run through the CapIV OS execution pipeline on submission.</p>
+          </DialogHeader>
+          <form onSubmit={handleAddDeal} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5 col-span-2">
+                <Label className="text-slate-300">Deal Title *</Label>
+                <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Downtown Mixed-Use Development"
+                  className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Sponsor *</Label>
+                <Input value={form.sponsor} onChange={(e) => setForm((f) => ({ ...f, sponsor: e.target.value }))}
+                  placeholder="Sponsor name" className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Location *</Label>
+                <Input value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+                  placeholder="e.g. Los Angeles, CA" className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Deal Size *</Label>
+                <Input value={form.dealSize} onChange={(e) => setForm((f) => ({ ...f, dealSize: e.target.value }))}
+                  placeholder="e.g. $45M" className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Asset Type</Label>
+                <Select value={form.assetType} onValueChange={(v) => setForm((f) => ({ ...f, assetType: v }))}>
+                  <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-700">
+                    {["Multifamily","Industrial","Office","Retail","Mixed-Use","Student Housing","Hotel","Self-Storage","Medical"].map((t) => (
+                      <SelectItem key={t} value={t} className="text-white">{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Investment Type</Label>
+                <Select value={form.investmentType} onValueChange={(v) => setForm((f) => ({ ...f, investmentType: v as Deal["investmentType"] }))}>
+                  <SelectTrigger className="bg-slate-900 border-slate-700 text-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-700">
+                    {["Equity","Debt","Hybrid"].map((t) => <SelectItem key={t} value={t} className="text-white">{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Risk Profile</Label>
+                <Select value={form.riskProfile} onValueChange={(v) => setForm((f) => ({ ...f, riskProfile: v as Deal["riskProfile"] }))}>
+                  <SelectTrigger className="bg-slate-900 border-slate-700 text-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-700">
+                    {["Core","Core-Plus","Value-Add","Opportunistic"].map((t) => <SelectItem key={t} value={t} className="text-white">{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Target Return</Label>
+                <Input value={form.targetReturn} onChange={(e) => setForm((f) => ({ ...f, targetReturn: e.target.value }))}
+                  placeholder="e.g. 15-20%" className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Hold Period</Label>
+                <Input value={form.holdPeriod} onChange={(e) => setForm((f) => ({ ...f, holdPeriod: e.target.value }))}
+                  placeholder="e.g. 5-7 years" className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Min. Investment</Label>
+                <Input value={form.minimumInvestment} onChange={(e) => setForm((f) => ({ ...f, minimumInvestment: e.target.value }))}
+                  placeholder="e.g. $100,000" className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Max Raise</Label>
+                <Input value={form.maxRaise} onChange={(e) => setForm((f) => ({ ...f, maxRaise: e.target.value }))}
+                  placeholder="e.g. $45M" className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500" />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label className="text-slate-300">Description</Label>
+                <Textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Deal summary..." rows={3}
+                  className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 resize-none" />
+              </div>
+            </div>
+
+            {/* Pipeline preview (shown after first submit attempt or re-submission) */}
+            {pipelineResult && (
+              <div className="p-4 rounded-xl border border-slate-700 bg-slate-900/60 space-y-2">
+                <p className={`text-sm font-bold flex items-center gap-2 ${getPipelineColor(pipelineResult.outcome)}`}>
+                  <Shield className="h-4 w-4" />
+                  Pipeline Result: {pipelineResult.outcome.toUpperCase()}
+                </p>
+                {pipelineResult.stages.map((s) => (
+                  <div key={s.stage} className="flex items-start gap-2">
+                    {getStageIcon(s.status)}
+                    <p className="text-xs text-slate-300"><span className="font-medium text-white">{s.stage}:</span> {s.note}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button type="button" variant="outline" className="border-slate-700 text-slate-300"
+                onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white" disabled={isSaving}>
+                {isSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running Pipeline...</> : "Submit Deal"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
-  )
-}
-
-function DealCard({
-  deal,
-  onViewDetails,
-  getStatusColor,
-  getRiskProfileColor,
-  onLike,
-  onBookmark,
-  onView,
-}: {
-  deal: Deal
-  onViewDetails: () => void
-  getStatusColor: (status: Deal["status"]) => string
-  getRiskProfileColor: (risk: Deal["riskProfile"]) => string
-  onLike: (dealId: string) => void
-  onBookmark: (dealId: string) => void
-  onView: (dealId: string) => void
-}) {
-  return (
-    <Card className="hover:shadow-lg transition-all duration-200 cursor-pointer group">
-      {/* Image Header */}
-      {deal.images && deal.images.length > 0 && (
-        <div className="relative h-48 overflow-hidden rounded-t-lg">
-          <img 
-            src={deal.images[0]} 
-            alt={deal.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-          />
-          <div className="absolute top-3 right-3 flex gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 w-8 p-0 bg-white/90 hover:bg-white"
-              onClick={(e) => {
-                e.stopPropagation()
-                onBookmark(deal.id)
-              }}
-            >
-              <Bookmark className={`h-4 w-4 ${deal.isBookmarked ? 'fill-current text-blue-600' : ''}`} />
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 w-8 p-0 bg-white/90 hover:bg-white"
-              onClick={(e) => {
-                e.stopPropagation()
-                onLike(deal.id)
-              }}
-            >
-              <Heart className={`h-4 w-4 ${deal.isLiked ? 'fill-current text-red-500' : ''}`} />
-            </Button>
-          </div>
-          <div className="absolute bottom-3 left-3">
-            <Badge className={getStatusColor(deal.status)}>{deal.status}</Badge>
-          </div>
-        </div>
-      )}
-
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle 
-              className="text-lg font-semibold text-foreground mb-2 line-clamp-2 cursor-pointer hover:text-blue-600 transition-colors"
-              onClick={(e) => {
-                e.stopPropagation()
-                onView(deal.id)
-                onViewDetails()
-              }}
-            >
-              {deal.title}
-            </CardTitle>
-            <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-2">
-              <MapPin className="h-4 w-4" />
-              <span>{deal.location}</span>
-            </div>
-          </div>
-          {!deal.images && <Badge className={getStatusColor(deal.status)}>{deal.status}</Badge>}
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-3">
-        {/* Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Progress</span>
-            <span className="font-medium">{deal.progress}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-              style={{ width: `${deal.progress}%` }}
-            ></div>
-          </div>
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>{deal.currentRaise}</span>
-            <span>{deal.maxRaise}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Building className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">{deal.assetType}</span>
-          </div>
-          <Badge className={getRiskProfileColor(deal.riskProfile)}>{deal.riskProfile}</Badge>
-        </div>
-
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="flex items-center space-x-2">
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-foreground">{deal.dealSize}</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-success">{deal.targetReturn}</span>
-          </div>
-        </div>
-
-        {/* Interactive Stats */}
-        <div className="flex items-center justify-between pt-2 border-t">
-          <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-            <div className="flex items-center space-x-1">
-              <Eye className="h-4 w-4" />
-              <span>{deal.views.toLocaleString()}</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Users className="h-4 w-4" />
-              <span>{deal.investors}</span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 px-2"
-              onClick={(e) => {
-                e.stopPropagation()
-                onLike(deal.id)
-              }}
-            >
-              <Heart className={`h-4 w-4 ${deal.isLiked ? 'fill-current text-red-500' : ''}`} />
-              <span className="ml-1">{deal.likes}</span>
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 px-2"
-              onClick={(e) => {
-                e.stopPropagation()
-                onBookmark(deal.id)
-              }}
-            >
-              <Bookmark className={`h-4 w-4 ${deal.isBookmarked ? 'fill-current text-blue-600' : ''}`} />
-            </Button>
-          </div>
-        </div>
-
-        <div className="pt-2">
-          <p className="text-xs text-muted-foreground mb-1">Sponsor:</p>
-          <p className="text-sm font-medium text-foreground">{deal.sponsor}</p>
-        </div>
-
-        <div className="pt-2">
-          <p className="text-xs text-muted-foreground mb-1">Min. Investment:</p>
-          <p className="text-sm font-medium text-foreground">{deal.minimumInvestment}</p>
-        </div>
-
-        <div className="pt-2 border-t">
-          <p className="text-xs text-card-foreground line-clamp-2">{deal.description}</p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-2 pt-3">
-          <Button 
-            size="sm" 
-            className="flex-1"
-            onClick={(e) => {
-              e.stopPropagation()
-              onView(deal.id)
-              onViewDetails()
-            }}
-          >
-            <Eye className="h-4 w-4 mr-1" />
-            View Details
-          </Button>
-          <Button 
-            size="sm" 
-            variant="outline"
-            onClick={(e) => {
-              e.stopPropagation()
-              // Add share functionality
-            }}
-          >
-            <Share2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function DealDetails({
-  deal,
-  getRiskProfileColor,
-}: {
-  deal: Deal
-  getRiskProfileColor: (risk: Deal["riskProfile"]) => string
-}) {
-  return (
-    <div className="space-y-6">
-      {/* Header with Image */}
-      {deal.images && deal.images.length > 0 && (
-        <div className="relative h-64 overflow-hidden rounded-lg">
-          <img 
-            src={deal.images[0]} 
-            alt={deal.title}
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-black/20"></div>
-          <div className="absolute bottom-4 left-4 text-white">
-            <h1 className="text-2xl font-bold mb-2">{deal.title}</h1>
-            <div className="flex items-center space-x-4 text-sm">
-              <div className="flex items-center space-x-1">
-                <MapPin className="h-4 w-4" />
-                <span>{deal.location}</span>
-              </div>
-              <Badge className="bg-white/90 text-black">{deal.status}</Badge>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Progress and Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Fundraising Progress</span>
-                <span className="text-lg font-bold">{deal.progress}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div 
-                  className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
-                  style={{ width: `${deal.progress}%` }}
-                ></div>
-              </div>
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>{deal.currentRaise}</span>
-                <span>{deal.maxRaise}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Users className="h-5 w-5 text-blue-600" />
-                <span className="text-sm font-medium">Active Investors</span>
-              </div>
-              <p className="text-2xl font-bold">{deal.investors}</p>
-              <p className="text-xs text-muted-foreground">Investors committed</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Eye className="h-5 w-5 text-green-600" />
-                <span className="text-sm font-medium">Views</span>
-              </div>
-              <p className="text-2xl font-bold">{deal.views.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">Total views</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Deal Overview */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <Building className="h-5 w-5" />
-              <span>Deal Overview</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Location</Label>
-              <p className="text-sm text-foreground flex items-center space-x-1">
-                <MapPin className="h-4 w-4" />
-                <span>{deal.location}</span>
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Asset Type</Label>
-              <p className="text-sm text-foreground">{deal.assetType}</p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Deal Size</Label>
-              <p className="text-sm font-semibold text-foreground">{deal.dealSize}</p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Risk Profile</Label>
-              <Badge className={getRiskProfileColor(deal.riskProfile)}>{deal.riskProfile}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Investment Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <DollarSign className="h-5 w-5" />
-              <span>Investment Details</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Sponsor</Label>
-              <p className="text-sm text-foreground">{deal.sponsor}</p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Target Return</Label>
-              <p className="text-sm font-semibold text-success flex items-center space-x-1">
-                <TrendingUp className="h-4 w-4" />
-                <span>{deal.targetReturn}</span>
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Hold Period</Label>
-              <p className="text-sm text-foreground flex items-center space-x-1">
-                <Calendar className="h-4 w-4" />
-                <span>{deal.holdPeriod}</span>
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Min. Investment</Label>
-              <p className="text-sm font-semibold text-foreground">{deal.minimumInvestment}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Key Metrics */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center space-x-2">
-            <BarChart3 className="h-5 w-5" />
-            <span>Key Metrics</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground">Cap Rate</p>
-              <p className="text-lg font-bold">{deal.keyMetrics.capRate}</p>
-            </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground">NOI</p>
-              <p className="text-lg font-bold">{deal.keyMetrics.noi}</p>
-            </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground">Occupancy</p>
-              <p className="text-lg font-bold">{deal.keyMetrics.occupancy}</p>
-            </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground">Year Built</p>
-              <p className="text-lg font-bold">{deal.keyMetrics.yearBuilt}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Timeline */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center space-x-2">
-            <Activity className="h-5 w-5" />
-            <span>Project Timeline</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {deal.timeline.map((item, index) => (
-              <div key={index} className="flex items-center space-x-4">
-                <div className={`w-3 h-3 rounded-full ${
-                  item.status === 'completed' ? 'bg-green-500' :
-                  item.status === 'pending' ? 'bg-yellow-500' :
-                  'bg-gray-300'
-                }`}></div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{item.milestone}</p>
-                  <p className="text-xs text-muted-foreground">{item.date}</p>
-                </div>
-                <Badge variant={
-                  item.status === 'completed' ? 'default' :
-                  item.status === 'pending' ? 'secondary' :
-                  'outline'
-                }>
-                  {item.status}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Description</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-card-foreground leading-relaxed">{deal.description}</p>
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end space-x-2">
-        <Button variant="outline">
-          <Download className="w-4 h-4 mr-2" />
-          Download Materials
-        </Button>
-        <Button variant="outline" onClick={() => {
-          setSelectedDealForOM(deal)
-          setIsOMDialogOpen(true)
-        }}>
-          <Upload className="w-4 h-4 mr-2" />
-          Submit Offering Memorandum
-        </Button>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-          <MessageCircle className="w-4 h-4 mr-2" />
-          Express Interest
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function DealForm({ onSubmit }: { onSubmit: (deal: Omit<Deal, "id">) => void }) {
-  const [formData, setFormData] = useState({
-    title: "",
-    location: "",
-    assetType: "",
-    dealSize: "",
-    status: "Active" as Deal["status"],
-    sponsor: "",
-    targetReturn: "",
-    holdPeriod: "",
-    description: "",
-    dateAdded: new Date().toISOString().split("T")[0],
-    investmentType: "Equity" as Deal["investmentType"],
-    riskProfile: "Core" as Deal["riskProfile"],
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSubmit(formData)
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="title">Deal Title *</Label>
-          <Input
-            id="title"
-            value={formData.title}
-            onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="location">Location *</Label>
-          <Input
-            id="location"
-            value={formData.location}
-            onChange={(e) => setFormData((prev) => ({ ...prev, location: e.target.value }))}
-            required
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="assetType">Asset Type</Label>
-          <Input
-            id="assetType"
-            value={formData.assetType}
-            onChange={(e) => setFormData((prev) => ({ ...prev, assetType: e.target.value }))}
-          />
-        </div>
-        <div>
-          <Label htmlFor="dealSize">Deal Size</Label>
-          <Input
-            id="dealSize"
-            value={formData.dealSize}
-            onChange={(e) => setFormData((prev) => ({ ...prev, dealSize: e.target.value }))}
-            placeholder="$50M"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="sponsor">Sponsor</Label>
-          <Input
-            id="sponsor"
-            value={formData.sponsor}
-            onChange={(e) => setFormData((prev) => ({ ...prev, sponsor: e.target.value }))}
-          />
-        </div>
-        <div>
-          <Label htmlFor="targetReturn">Target Return</Label>
-          <Input
-            id="targetReturn"
-            value={formData.targetReturn}
-            onChange={(e) => setFormData((prev) => ({ ...prev, targetReturn: e.target.value }))}
-            placeholder="15-18%"
-          />
-        </div>
-      </div>
-
-      <div>
-        <Label htmlFor="description">Description</Label>
-        <Input
-          id="description"
-          value={formData.description}
-          onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-        />
-      </div>
-
-      <div className="flex justify-end space-x-2 pt-4">
-        <Button type="button" variant="outline">
-          Cancel
-        </Button>
-        <Button type="submit" className="bg-secondary hover:bg-secondary/90 text-secondary-foreground">
-          Add Deal
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-function OfferingMemorandumForm({ 
-  deal, 
-  onSubmit 
-}: { 
-  deal: Deal
-  onSubmit: (omData: any) => void 
-}) {
-  const [formData, setFormData] = useState({
-    companyName: "",
-    contactName: "",
-    email: "",
-    phone: "",
-    investmentAmount: "",
-    accreditedInvestor: false,
-    investmentExperience: "",
-    additionalNotes: "",
-    fileUpload: null as File | null
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSubmit(formData)
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null
-    setFormData(prev => ({ ...prev, fileUpload: file }))
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-        <h3 className="font-semibold text-gray-900 mb-2">Deal Information</h3>
-        <p className="text-sm text-gray-600">{deal.title}</p>
-        <p className="text-sm text-gray-500">{deal.location} • {deal.dealSize}</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="companyName">Company/Entity Name *</Label>
-          <Input
-            id="companyName"
-            value={formData.companyName}
-            onChange={(e) => setFormData((prev) => ({ ...prev, companyName: e.target.value }))}
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="contactName">Contact Name *</Label>
-          <Input
-            id="contactName"
-            value={formData.contactName}
-            onChange={(e) => setFormData((prev) => ({ ...prev, contactName: e.target.value }))}
-            required
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="email">Email Address *</Label>
-          <Input
-            id="email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="phone">Phone Number</Label>
-          <Input
-            id="phone"
-            type="tel"
-            value={formData.phone}
-            onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      <div>
-        <Label htmlFor="investmentAmount">Proposed Investment Amount *</Label>
-        <Input
-          id="investmentAmount"
-          value={formData.investmentAmount}
-          onChange={(e) => setFormData((prev) => ({ ...prev, investmentAmount: e.target.value }))}
-          placeholder="$100,000"
-          required
-        />
-      </div>
-
-      <div>
-        <Label htmlFor="investmentExperience">Investment Experience *</Label>
-        <select 
-          id="investmentExperience"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-          value={formData.investmentExperience}
-          onChange={(e) => setFormData((prev) => ({ ...prev, investmentExperience: e.target.value }))}
-          required
-        >
-          <option value="">Select experience level</option>
-          <option value="beginner">Beginner (0-2 years)</option>
-          <option value="intermediate">Intermediate (3-7 years)</option>
-          <option value="advanced">Advanced (8+ years)</option>
-          <option value="professional">Professional investor</option>
-        </select>
-      </div>
-
-      <div className="flex items-center space-x-2">
-        <input
-          type="checkbox"
-          id="accreditedInvestor"
-          checked={formData.accreditedInvestor}
-          onChange={(e) => setFormData((prev) => ({ ...prev, accreditedInvestor: e.target.checked }))}
-          className="rounded border-gray-300"
-        />
-        <Label htmlFor="accreditedInvestor" className="text-sm">
-          I am an accredited investor
-        </Label>
-      </div>
-
-      <div>
-        <Label htmlFor="fileUpload">Upload Supporting Documents</Label>
-        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-          <div className="space-y-1 text-center">
-            <FileText className="mx-auto h-12 w-12 text-gray-400" />
-            <div className="flex text-sm text-gray-600">
-              <label htmlFor="fileUpload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none">
-                <span>Upload files</span>
-                <input
-                  id="fileUpload"
-                  name="fileUpload"
-                  type="file"
-                  className="sr-only"
-                  onChange={handleFileChange}
-                  accept=".pdf,.doc,.docx"
-                />
-              </label>
-              <p className="pl-1">or drag and drop</p>
-            </div>
-            <p className="text-xs text-gray-500">PDF, DOC, DOCX up to 10MB</p>
-          </div>
-        </div>
-        {formData.fileUpload && (
-          <p className="mt-2 text-sm text-gray-600">
-            Selected: {formData.fileUpload.name}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <Label htmlFor="additionalNotes">Additional Notes</Label>
-        <textarea
-          id="additionalNotes"
-          rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-          value={formData.additionalNotes}
-          onChange={(e) => setFormData((prev) => ({ ...prev, additionalNotes: e.target.value }))}
-          placeholder="Any additional information or questions..."
-        />
-      </div>
-
-      <div className="flex justify-end space-x-2 pt-4">
-        <Button type="button" variant="outline">
-          Cancel
-        </Button>
-        <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
-          <Upload className="w-4 h-4 mr-2" />
-          Submit Offering Memorandum
-        </Button>
-      </div>
-    </form>
   )
 }

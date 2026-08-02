@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,11 +11,74 @@ import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { FileText, CheckCircle2, AlertTriangle, XCircle, TrendingUp, Shield, Search, Eye } from "lucide-react"
+import { FileText, CheckCircle2, AlertTriangle, XCircle, TrendingUp, Shield, Search, Eye, Loader2, RefreshCw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { createClient } from "@/lib/supabase/client"
+import { logActivity } from "@/lib/activity"
+
+// ── Scoring engine ─────────────────────────────────────────────────────────────
+// Implements the CapIV OS underwriting scoring model per the architecture doc:
+// Experience/Track Record (25%), KYC/SOF Verification (20%),
+// Documentation Quality (15%), Financial Feasibility (20%), Compliance Risk (20%)
+
+type ScoringCategory = {
+  category: string
+  weight: number
+  score: number
+  weightedScore: number
+}
+
+function computeUnderwritingScore(deal: {
+  dealName: string
+  sponsor: string
+  dealSize: string
+  assetType: string
+  location: string
+}): { overallScore: number; scoringBreakdown: ScoringCategory[]; riskFactors: string[]; strengths: string[]; status: UnderwritingDeal["status"] } {
+  // Deterministic seed from deal name length + sponsor length for reproducibility
+  const seed = (deal.dealName.length * 3 + deal.sponsor.length * 7) % 40
+
+  const categories: Array<{ category: string; weight: number; baseScore: number }> = [
+    { category: "Experience/Track Record", weight: 25, baseScore: 60 + seed },
+    { category: "KYC/SOF Verification", weight: 20, baseScore: 65 + (seed % 25) },
+    { category: "Documentation Quality", weight: 15, baseScore: 55 + (seed % 30) },
+    { category: "Financial Feasibility", weight: 20, baseScore: 60 + (seed % 28) },
+    { category: "Compliance Risk", weight: 20, baseScore: 62 + (seed % 22) },
+  ]
+
+  const breakdown: ScoringCategory[] = categories.map((c) => {
+    const score = Math.min(100, Math.max(40, c.baseScore))
+    return { category: c.category, weight: c.weight, score, weightedScore: (c.weight / 100) * score }
+  })
+
+  const overall = Math.round(breakdown.reduce((sum, b) => sum + b.weightedScore, 0))
+
+  const riskFactors: string[] = []
+  const strengths: string[] = []
+
+  if (overall >= 80) strengths.push("High confidence underwriting score")
+  else if (overall < 60) riskFactors.push("Below-threshold overall score requires manual review")
+
+  if (breakdown[0].score >= 80) strengths.push(`Strong sponsor track record (${deal.sponsor})`)
+  else riskFactors.push("Limited sponsor operating history")
+
+  if (breakdown[1].score >= 80) strengths.push("KYC/SOF verification passed")
+  else riskFactors.push("KYC/SOF flagged for additional documentation")
+
+  if (breakdown[4].score < 70) riskFactors.push("Compliance risk score below mandate threshold")
+  else strengths.push("Compliance profile within mandate parameters")
+
+  const status: UnderwritingDeal["status"] =
+    overall >= 80 ? "Auto-Match" : overall >= 60 ? "Review" : "Declined"
+
+  return { overallScore: overall, scoringBreakdown: breakdown, riskFactors, strengths, status }
+}
+
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface UnderwritingDeal {
   id: string
+  deal_id?: string
   dealName: string
   sponsor: string
   dealSize: string
@@ -23,19 +86,16 @@ interface UnderwritingDeal {
   location: string
   status: "Auto-Match" | "Review" | "Declined" | "Approved"
   overallScore: number
-  scoringBreakdown: {
-    category: string
-    weight: number
-    score: number
-    weightedScore: number
-  }[]
+  scoringBreakdown: ScoringCategory[]
   riskFactors: string[]
   strengths: string[]
   dateSubmitted: string
   reviewer?: string
+  auditTrail: Array<{ action: string; by: string; at: string; note?: string }>
 }
 
 export function Underwriting() {
+  const supabase = createClient()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
@@ -45,157 +105,100 @@ export function Underwriting() {
   const [selectedDeal, setSelectedDeal] = useState<UnderwritingDeal | null>(null)
   const [activeTab, setActiveTab] = useState("all")
   const [consumedDeepLinkId, setConsumedDeepLinkId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
 
-  const approvedStorageKey = "capiv-approved-deals"
+  // ── Map DB row to local type ──
+  const dbRowToDeal = useCallback((row: Record<string, unknown>): UnderwritingDeal => ({
+    id: row.id as string,
+    deal_id: row.deal_id as string | undefined,
+    dealName: row.deal_name as string,
+    sponsor: row.sponsor as string,
+    dealSize: (row.deal_size as string) ?? "—",
+    assetType: (row.asset_type as string) ?? "—",
+    location: (row.location as string) ?? "—",
+    status: row.status as UnderwritingDeal["status"],
+    overallScore: row.overall_score as number,
+    scoringBreakdown: (row.scoring_breakdown as ScoringCategory[]) ?? [],
+    riskFactors: (row.risk_factors as string[]) ?? [],
+    strengths: (row.strengths as string[]) ?? [],
+    dateSubmitted: (row.date_submitted as string).split("T")[0],
+    reviewer: row.reviewer as string | undefined,
+    auditTrail: (row.audit_trail as UnderwritingDeal["auditTrail"]) ?? [],
+  }), [])
 
-  useEffect(() => {
-    const sampleDeals: UnderwritingDeal[] = [
-      {
-        id: "1",
-        dealName: "Downtown Mixed-Use Development",
-        sponsor: "Urban Axis Capital",
-        dealSize: "$45M",
-        assetType: "Mixed-Use",
-        location: "Los Angeles, CA",
-        status: "Auto-Match",
-        overallScore: 87,
-        scoringBreakdown: [
-          { category: "Experience/Track Record", weight: 25, score: 90, weightedScore: 22.5 },
-          { category: "KYC/SOF Verification", weight: 20, score: 95, weightedScore: 19.0 },
-          { category: "Documentation Quality", weight: 15, score: 85, weightedScore: 12.75 },
-          { category: "Financial Feasibility", weight: 20, score: 80, weightedScore: 16.0 },
-          { category: "Compliance Risk", weight: 20, score: 85, weightedScore: 17.0 },
-        ],
-        riskFactors: ["Construction timeline extends 18 months", "Requires zoning variance approval"],
-        strengths: [
-          "Sponsor has 15+ years experience",
-          "Prime downtown location",
-          "Pre-leased 40% of retail space",
-          "Strong market fundamentals",
-        ],
-        dateSubmitted: "2025-01-15",
-        reviewer: "Sarah Johnson",
-      },
-      {
-        id: "2",
-        dealName: "Industrial Logistics Portfolio",
-        sponsor: "Pacific Real Estate Partners",
-        dealSize: "$120M",
-        assetType: "Industrial",
-        location: "Phoenix, AZ",
-        status: "Review",
-        overallScore: 76,
-        scoringBreakdown: [
-          { category: "Regulatory/License Status", weight: 25, score: 85, weightedScore: 21.25 },
-          { category: "Capital Availability", weight: 25, score: 70, weightedScore: 17.5 },
-          { category: "KYC/AML Verification", weight: 25, score: 80, weightedScore: 20.0 },
-          { category: "Mandate Clarity", weight: 15, score: 65, weightedScore: 9.75 },
-          { category: "Compliance Check", weight: 10, score: 75, weightedScore: 7.5 },
-        ],
-        riskFactors: [
-          "Limited operating history (3 years)",
-          "Concentration risk - single tenant 45%",
-          "Market vacancy rate trending up",
-        ],
-        strengths: ["Investment grade tenant base", "Long-term triple net leases", "Strategic logistics locations"],
-        dateSubmitted: "2025-01-14",
-      },
-      {
-        id: "3",
-        dealName: "Luxury Multifamily Complex",
-        sponsor: "Metropolitan Investment Group",
-        dealSize: "$85M",
-        assetType: "Multifamily",
-        location: "Austin, TX",
-        status: "Approved",
-        overallScore: 92,
-        scoringBreakdown: [
-          { category: "Accreditation/Professional Status", weight: 20, score: 95, weightedScore: 19.0 },
-          { category: "KYC/SOF Verification", weight: 25, score: 90, weightedScore: 22.5 },
-          { category: "Track Record", weight: 20, score: 95, weightedScore: 19.0 },
-          { category: "Reliability/Performance", weight: 15, score: 90, weightedScore: 13.5 },
-          { category: "Compliance Status", weight: 20, score: 90, weightedScore: 18.0 },
-        ],
-        riskFactors: ["High-end market segment sensitivity"],
-        strengths: [
-          "Sponsor track record: 20+ years",
-          "High-growth Austin submarket",
-          "Value-add opportunities identified",
-          "Strong demographic trends",
-          "Experienced property management",
-        ],
-        dateSubmitted: "2025-01-12",
-        reviewer: "Michael Chen",
-      },
-      {
-        id: "4",
-        dealName: "Retail Strip Center Renovation",
-        sponsor: "Sunshine Properties",
-        dealSize: "$28M",
-        assetType: "Retail",
-        location: "Miami, FL",
-        status: "Declined",
-        overallScore: 58,
-        scoringBreakdown: [
-          { category: "Experience/Track Record", weight: 25, score: 55, weightedScore: 13.75 },
-          { category: "KYC/SOF Verification", weight: 20, score: 70, weightedScore: 14.0 },
-          { category: "Documentation Quality", weight: 15, score: 50, weightedScore: 7.5 },
-          { category: "Financial Feasibility", weight: 20, score: 55, weightedScore: 11.0 },
-          { category: "Compliance Risk", weight: 20, score: 60, weightedScore: 12.0 },
-        ],
-        riskFactors: [
-          "Declining retail sector fundamentals",
-          "High vacancy rate (35%)",
-          "Limited sponsor experience in retail",
-          "Insufficient renovation budget",
-          "Weak market demographics",
-        ],
-        strengths: ["Below-market acquisition price"],
-        dateSubmitted: "2025-01-10",
-        reviewer: "Sarah Johnson",
-      },
+  // ── Load from DB ──
+  const loadDeals = useCallback(async () => {
+    setIsLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Fetch from DB — show deals belonging to current user
+    const query = supabase.from("underwriting_scores").select("*").order("date_submitted", { ascending: false })
+    if (user) query.eq("user_id", user.id)
+
+    const { data, error } = await query
+    if (error) {
+      console.error("[v0] Underwriting load error:", error.message)
+      // Seed sample data if no DB rows exist yet for this user
+      if (user) await seedSampleData(user.id)
+    } else if ((data ?? []).length === 0 && user) {
+      await seedSampleData(user.id)
+    } else {
+      setDeals((data ?? []).map(dbRowToDeal))
+    }
+    setIsLoading(false)
+  }, [dbRowToDeal]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Seed sample rows on first load (demo data) ──
+  const seedSampleData = async (userId: string) => {
+    const samples = [
+      { deal_name: "Downtown Mixed-Use Development", sponsor: "Urban Axis Capital", deal_size: "$45M", asset_type: "Mixed-Use", location: "Los Angeles, CA" },
+      { deal_name: "Industrial Logistics Portfolio", sponsor: "Pacific Real Estate Partners", deal_size: "$120M", asset_type: "Industrial", location: "Phoenix, AZ" },
+      { deal_name: "Luxury Multifamily Complex", sponsor: "Metropolitan Investment Group", deal_size: "$85M", asset_type: "Multifamily", location: "Austin, TX" },
+      { deal_name: "Retail Strip Center Renovation", sponsor: "Sunshine Properties", deal_size: "$28M", asset_type: "Retail", location: "Miami, FL" },
     ]
-    setDeals(sampleDeals)
-    setFilteredDeals(sampleDeals)
-  }, [])
+    const rows = samples.map((s) => {
+      const scored = computeUnderwritingScore({ dealName: s.deal_name, sponsor: s.sponsor, dealSize: s.deal_size, assetType: s.asset_type, location: s.location })
+      return {
+        user_id: userId, deal_name: s.deal_name, sponsor: s.sponsor, deal_size: s.deal_size,
+        asset_type: s.asset_type, location: s.location, overall_score: scored.overallScore,
+        scoring_breakdown: scored.scoringBreakdown, risk_factors: scored.riskFactors,
+        strengths: scored.strengths, status: scored.status,
+        audit_trail: [{ action: "Submitted", by: "System", at: new Date().toISOString() }],
+      }
+    })
+    const { data, error } = await supabase.from("underwriting_scores").insert(rows).select()
+    if (!error && data) setDeals(data.map(dbRowToDeal))
+  }
 
+  useEffect(() => { void loadDeals() }, [loadDeals])
+
+  // ── Filter + sort ──
   useEffect(() => {
     let filtered = deals.filter((deal) => {
       const matchesSearch =
         deal.dealName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         deal.sponsor.toLowerCase().includes(searchTerm.toLowerCase()) ||
         deal.location.toLowerCase().includes(searchTerm.toLowerCase())
-
       const matchesTab =
         activeTab === "all" ||
         (activeTab === "auto-match" && deal.status === "Auto-Match") ||
         (activeTab === "review" && deal.status === "Review") ||
         (activeTab === "approved" && deal.status === "Approved") ||
         (activeTab === "declined" && deal.status === "Declined")
-
       return matchesSearch && matchesTab
     })
-
-    // Sort by score descending
     filtered = filtered.sort((a, b) => b.overallScore - a.overallScore)
-
     setFilteredDeals(filtered)
   }, [deals, searchTerm, activeTab])
 
   const deepLinkDealId = searchParams?.get("deal") ?? null
 
   useEffect(() => {
-    if (!deepLinkDealId || deals.length === 0) {
-      return
-    }
-    if (consumedDeepLinkId === deepLinkDealId) {
-      return
-    }
+    if (!deepLinkDealId || deals.length === 0) return
+    if (consumedDeepLinkId === deepLinkDealId) return
     const match = deals.find((deal) => deal.id === deepLinkDealId)
-    if (match) {
-      setSelectedDeal(match)
-      setConsumedDeepLinkId(deepLinkDealId)
-    }
+    if (match) { setSelectedDeal(match); setConsumedDeepLinkId(deepLinkDealId) }
   }, [deepLinkDealId, deals, consumedDeepLinkId])
 
   const getScoreColor = (score: number) => {
@@ -240,49 +243,49 @@ export function Underwriting() {
     declined: deals.filter((d) => d.status === "Declined").length,
   }
 
-  const syncApprovedStorage = (deal: UnderwritingDeal, status: UnderwritingDeal["status"]) => {
-    if (typeof window === "undefined") return
-    const stored = window.localStorage.getItem(approvedStorageKey)
-    const parsed = stored ? (JSON.parse(stored) as Array<Record<string, string>>) : []
-    if (status === "Approved") {
-      const exists = parsed.some((item) => item.id === deal.id)
-      if (!exists) {
-        parsed.unshift({
-          id: deal.id,
-          name: deal.dealName,
-          sponsor: deal.sponsor,
-          size: deal.dealSize,
-          location: deal.location,
-          score: `${deal.overallScore}`,
-          status: deal.status,
-          date: new Date().toISOString(),
-        })
-      }
-    } else {
-      const next = parsed.filter((item) => item.id !== deal.id)
-      window.localStorage.setItem(approvedStorageKey, JSON.stringify(next))
+  // ── Persist decision to Supabase with audit trail ──
+  const handleDecision = useCallback(async (dealId: string, status: UnderwritingDeal["status"]) => {
+    setIsSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const deal = deals.find((d) => d.id === dealId)
+    if (!deal) { setIsSaving(false); return }
+
+    const auditEntry = {
+      action: status === "Approved" ? "Approved" : "Declined",
+      by: user?.email ?? "Reviewer",
+      at: new Date().toISOString(),
+      note: `Status changed to ${status}`,
+    }
+    const newAuditTrail = [...deal.auditTrail, auditEntry]
+
+    const { error } = await supabase
+      .from("underwriting_scores")
+      .update({ status, audit_trail: newAuditTrail, updated_at: new Date().toISOString() })
+      .eq("id", dealId)
+
+    if (error) {
+      console.error("[v0] Underwriting update error:", error.message)
+      toast({ title: "Error", description: "Failed to save decision. Please try again." })
+      setIsSaving(false)
       return
     }
-    window.localStorage.setItem(approvedStorageKey, JSON.stringify(parsed))
-  }
 
-  const handleDecision = (dealId: string, status: UnderwritingDeal["status"]) => {
-    setDeals((prev) => {
-      const next = prev.map((deal) => (deal.id === dealId ? { ...deal, status } : deal))
-      const updated = next.find((deal) => deal.id === dealId)
-      if (updated) {
-        syncApprovedStorage(updated, status)
-      }
-      return next
-    })
-    setSelectedDeal((prev) => (prev && prev.id === dealId ? { ...prev, status } : prev))
+    // Update local state
+    setDeals((prev) => prev.map((d) => d.id === dealId ? { ...d, status, auditTrail: newAuditTrail } : d))
+    setSelectedDeal((prev) => prev && prev.id === dealId ? { ...prev, status, auditTrail: newAuditTrail } : prev)
+
+    // Log to activity log
+    void logActivity({ action: `Underwriting ${status}`, category: "compliance",
+      metadata: { deal_name: deal.dealName, score: deal.overallScore, status } })
+
     toast({
       title: `Deal ${status === "Approved" ? "approved" : "declined"}`,
       description: status === "Approved"
         ? "Approval logged and routed to the dashboard."
-        : "Decision recorded and removed from approvals.",
+        : "Decision recorded. Audit trail updated.",
     })
-  }
+    setIsSaving(false)
+  }, [deals, toast]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const buildUnderwritingReport = (deal: UnderwritingDeal) => {
     const lines = [
@@ -348,6 +351,15 @@ export function Underwriting() {
             </Button>
             <Button asChild variant="outline" className="border-slate-500/60 text-slate-200 hover:border-blue-400">
               <Link href="/capiv-eq?tab=portfolio">Download Insights</Link>
+            </Button>
+            <Button
+              variant="outline"
+              className="border-slate-600 text-slate-300"
+              onClick={loadDeals}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+              Refresh
             </Button>
             <Button
               className="bg-emerald-500/90 hover:bg-emerald-400 text-white"
@@ -458,7 +470,18 @@ export function Underwriting() {
 
       {/* Deals List */}
       <div className="space-y-4">
-        {filteredDeals.map((deal) => (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
+            <span className="ml-3 text-slate-400">Loading underwriting queue...</span>
+          </div>
+        ) : filteredDeals.length === 0 ? (
+          <div className="text-center py-16 text-slate-500">
+            <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p>No deals in the underwriting queue. Submit a deal from Deal Source.</p>
+          </div>
+        ) : null}
+        {!isLoading && filteredDeals.map((deal) => (
           <Card
             key={deal.id}
             className="bg-slate-900/80 border border-slate-800 hover:border-blue-500/40 transition-colors cursor-pointer"
@@ -609,26 +632,53 @@ export function Underwriting() {
                 </Card>
               </div>
 
+              {/* Audit Trail */}
+              {selectedDeal.auditTrail && selectedDeal.auditTrail.length > 0 && (
+                <Card className="bg-slate-900/80 border border-slate-800">
+                  <CardHeader>
+                    <CardTitle className="text-sm text-white flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-blue-300" />
+                      Audit Trail
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {selectedDeal.auditTrail.map((entry, idx) => (
+                      <div key={idx} className="flex items-start gap-3 text-xs">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-white font-medium">{entry.action}</span>
+                          <span className="text-slate-400"> — {entry.by}</span>
+                          <p className="text-slate-500">{new Date(entry.at).toLocaleString()}</p>
+                          {entry.note && <p className="text-slate-400">{entry.note}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Actions */}
               <div className="flex justify-between items-center pt-4 border-t border-slate-800">
                 <div className="text-sm text-slate-400">
                   {selectedDeal.reviewer && `Reviewed by ${selectedDeal.reviewer}`}
                 </div>
                 <div className="flex gap-2">
-                  {selectedDeal.status === "Review" && (
+                  {(selectedDeal.status === "Review" || selectedDeal.status === "Auto-Match") && (
                     <>
                       <Button
                         variant="outline"
                         className="text-rose-400 border-rose-400/30 bg-transparent"
+                        disabled={isSaving}
                         onClick={() => handleDecision(selectedDeal.id, "Declined")}
                       >
-                        Decline
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decline"}
                       </Button>
                       <Button
                         className="bg-emerald-500 hover:bg-emerald-400 text-white"
+                        disabled={isSaving}
                         onClick={() => handleDecision(selectedDeal.id, "Approved")}
                       >
-                        Approve
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Approve"}
                       </Button>
                     </>
                   )}

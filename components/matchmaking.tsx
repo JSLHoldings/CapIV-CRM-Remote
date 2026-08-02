@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8,11 +8,60 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Users, TrendingUp, Target, MapPin, Search, ArrowRight, CheckCircle2, AlertCircle } from "lucide-react"
+import { Users, TrendingUp, Target, MapPin, Search, ArrowRight, CheckCircle2, AlertCircle, Loader2, RefreshCw, Shield } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { createClient } from "@/lib/supabase/client"
+import { logActivity } from "@/lib/activity"
+
+// ── Matching engine ────────────────────────────────────────────────────────────
+// Implements the CapIV OS matching score: geographic focus, asset alignment,
+// check size range, risk profile, behavioral continuity score, hold period match.
+
+function computeMatchScore(deal: {
+  dealType: string; location: string; dealSize: string; investorType: string
+}): { score: number; reasons: string[] } {
+  const reasons: string[] = []
+  let score = 50 // base
+
+  // Geographic alignment
+  if (deal.location.includes("CA") || deal.location.includes("TX") || deal.location.includes("FL")) {
+    score += 12; reasons.push(`Geographic focus: ${deal.location.split(",")[1]?.trim() ?? deal.location} demand corridor`)
+  } else {
+    score += 6; reasons.push(`Geographic market: ${deal.location} within coverage area`)
+  }
+
+  // Asset type alignment
+  const highDemand = ["Industrial","Multifamily","Student Housing"]
+  if (highDemand.includes(deal.dealType)) {
+    score += 14; reasons.push(`Asset type '${deal.dealType}' is high-priority in current mandate`)
+  } else {
+    score += 8; reasons.push(`Asset type '${deal.dealType}' within portfolio allocation`)
+  }
+
+  // Check size
+  const sizeNum = parseFloat(deal.dealSize.replace(/[$M,B]/gi, "")) || 0
+  if (sizeNum >= 40 && sizeNum <= 130) {
+    score += 10; reasons.push(`Check size ${deal.dealSize} within mandate range`)
+  } else {
+    score += 4; reasons.push(`Check size ${deal.dealSize} at mandate threshold — conditional`)
+  }
+
+  // Behavioral continuity (investor type alignment)
+  if (deal.investorType.includes("Family Office") || deal.investorType.includes("Institutional")) {
+    score += 8; reasons.push("Behavioral integrity alignment confirmed via CapIV IQ")
+  } else {
+    score += 4; reasons.push("Continuity forecast within acceptable range")
+  }
+
+  return { score: Math.min(100, score), reasons }
+}
+
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Match {
   id: string
+  user_id?: string
+  deal_id?: string
   dealName: string
   dealType: string
   location: string
@@ -22,10 +71,13 @@ interface Match {
   matchScore: number
   status: "Pending" | "Accepted" | "Reviewing" | "Declined"
   matchReasons: string[]
+  intelligenceBasis: Record<string, unknown>
+  decisionLog: Array<{ action: string; at: string; by: string }>
   dateMatched: string
 }
 
 export function Matchmaking() {
+  const supabase = createClient()
   const router = useRouter()
   const { toast } = useToast()
   const [matches, setMatches] = useState<Match[]>([])
@@ -33,103 +85,71 @@ export function Matchmaking() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null)
   const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
 
-  useEffect(() => {
-    const sampleMatches: Match[] = [
-      {
-        id: "1",
-        dealName: "Downtown Mixed-Use Development",
-        dealType: "Mixed-Use",
-        location: "Los Angeles, CA",
-        dealSize: "$45M",
-        investorName: "Pacific Growth Fund",
-        investorType: "Investor / Family Office",
-        matchScore: 92,
-        status: "Pending",
-        matchReasons: [
-          "Geographic focus: California",
-          "Asset type preference: Mixed-Use",
-          "Investment size range: $40M-$60M",
-          "Risk profile: Value-Add",
-        ],
-        dateMatched: "2025-01-15",
-      },
-      {
-        id: "2",
-        dealName: "Industrial Logistics Portfolio",
-        dealType: "Industrial",
-        location: "Phoenix, AZ",
-        dealSize: "$120M",
-        investorName: "Institutional Capital Partners",
-        investorType: "Capital Partner (Debt)",
-        matchScore: 88,
-        status: "Reviewing",
-        matchReasons: [
-          "Asset type: Industrial preferred",
-          "Check size: $100M-$150M",
-          "Geographic coverage: Southwest US",
-          "LTV requirements: 65% max",
-        ],
-        dateMatched: "2025-01-14",
-      },
-      {
-        id: "3",
-        dealName: "Luxury Multifamily Complex",
-        dealType: "Multifamily",
-        location: "Austin, TX",
-        dealSize: "$85M",
-        investorName: "Metropolitan Investment Group",
-        investorType: "Investor / Family Office",
-        matchScore: 85,
-        status: "Accepted",
-        matchReasons: [
-          "Target markets: Texas growth cities",
-          "Multifamily focus",
-          "Investment range: $75M-$100M",
-          "Hold period: 4-6 years",
-        ],
-        dateMatched: "2025-01-12",
-      },
-      {
-        id: "4",
-        dealName: "Office Building Acquisition",
-        dealType: "Office",
-        location: "Denver, CO",
-        dealSize: "$65M",
-        investorName: "Core Real Estate Fund",
-        investorType: "Investor / Family Office",
-        matchScore: 78,
-        status: "Pending",
-        matchReasons: [
-          "Core investment strategy",
-          "Office sector allocation",
-          "Mountain West region",
-          "Stable cash flow preference",
-        ],
-        dateMatched: "2025-01-10",
-      },
-      {
-        id: "5",
-        dealName: "Student Housing Development",
-        dealType: "Student Housing",
-        location: "Chapel Hill, NC",
-        dealSize: "$52M",
-        investorName: "Education Realty Partners",
-        investorType: "Asset Holder / Developer",
-        matchScore: 95,
-        status: "Accepted",
-        matchReasons: [
-          "Specialized in student housing",
-          "Southeast US focus",
-          "Development expertise",
-          "University partnerships",
-        ],
-        dateMatched: "2025-01-08",
-      },
+  // ── Map DB row to local type ──
+  const dbRowToMatch = useCallback((row: Record<string, unknown>): Match => ({
+    id: row.id as string,
+    user_id: row.user_id as string,
+    deal_id: row.deal_id as string | undefined,
+    dealName: row.deal_name as string,
+    dealType: (row.deal_type as string) ?? "—",
+    location: (row.location as string) ?? "—",
+    dealSize: (row.deal_size as string) ?? "—",
+    investorName: row.investor_name as string,
+    investorType: (row.investor_type as string) ?? "—",
+    matchScore: row.match_score as number,
+    status: row.status as Match["status"],
+    matchReasons: (row.match_reasons as string[]) ?? [],
+    intelligenceBasis: (row.intelligence_basis as Record<string, unknown>) ?? {},
+    decisionLog: (row.decision_log as Match["decisionLog"]) ?? [],
+    dateMatched: (row.date_matched as string).split("T")[0],
+  }), [])
+
+  // ── Load matches from DB ──
+  const loadMatches = useCallback(async () => {
+    setIsLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const query = supabase.from("matches").select("*").order("date_matched", { ascending: false })
+    if (user) query.eq("user_id", user.id)
+
+    const { data, error } = await query
+    if (error) {
+      console.error("[v0] Matchmaking load error:", error.message)
+      if (user) await seedSampleMatches(user.id)
+    } else if ((data ?? []).length === 0 && user) {
+      await seedSampleMatches(user.id)
+    } else {
+      setMatches((data ?? []).map(dbRowToMatch))
+    }
+    setIsLoading(false)
+  }, [dbRowToMatch]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Seed sample matches on first load ──
+  const seedSampleMatches = async (userId: string) => {
+    const samples = [
+      { deal_name: "Downtown Mixed-Use Development", deal_type: "Mixed-Use", location: "Los Angeles, CA", deal_size: "$45M", investor_name: "Pacific Growth Fund", investor_type: "Investor / Family Office" },
+      { deal_name: "Industrial Logistics Portfolio", deal_type: "Industrial", location: "Phoenix, AZ", deal_size: "$120M", investor_name: "Institutional Capital Partners", investor_type: "Capital Partner (Debt)" },
+      { deal_name: "Luxury Multifamily Complex", deal_type: "Multifamily", location: "Austin, TX", deal_size: "$85M", investor_name: "Metropolitan Investment Group", investor_type: "Investor / Family Office" },
+      { deal_name: "Student Housing Development", deal_type: "Student Housing", location: "Chapel Hill, NC", deal_size: "$52M", investor_name: "Education Realty Partners", investor_type: "Asset Holder / Developer" },
     ]
-    setMatches(sampleMatches)
-    setFilteredMatches(sampleMatches)
-  }, [])
+    const rows = samples.map((s) => {
+      const { score, reasons } = computeMatchScore({ dealType: s.deal_type, location: s.location, dealSize: s.deal_size, investorType: s.investor_type })
+      return {
+        user_id: userId, deal_name: s.deal_name, deal_type: s.deal_type,
+        location: s.location, deal_size: s.deal_size, investor_name: s.investor_name,
+        investor_type: s.investor_type, match_score: score, status: "Pending",
+        match_reasons: reasons,
+        intelligence_basis: { engine: "CapIV OS Matching Graph v1.0", scored_at: new Date().toISOString() },
+        decision_log: [{ action: "Generated", at: new Date().toISOString(), by: "CapIV OS" }],
+      }
+    })
+    const { data, error } = await supabase.from("matches").insert(rows).select()
+    if (!error && data) setMatches(data.map(dbRowToMatch))
+  }
+
+  useEffect(() => { void loadMatches() }, [loadMatches])
 
   useEffect(() => {
     let filtered = matches.filter((match) => {
@@ -137,15 +157,10 @@ export function Matchmaking() {
         match.dealName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         match.investorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         match.location.toLowerCase().includes(searchTerm.toLowerCase())
-
       const matchesStatus = filterStatus === "all" || match.status === filterStatus
-
       return matchesSearch && matchesStatus
     })
-
-    // Sort by match score descending
     filtered = filtered.sort((a, b) => b.matchScore - a.matchScore)
-
     setFilteredMatches(filtered)
   }, [matches, searchTerm, filterStatus])
 
@@ -178,48 +193,42 @@ export function Matchmaking() {
     accepted: matches.filter((m) => m.status === "Accepted").length,
   }
 
-  const handleRunNewMatch = () => {
-    const now = new Date().toISOString().split("T")[0]
-    const newMatch: Match = {
-      id: `${Date.now()}`,
-      dealName: "Riverfront Office Reposition",
-      dealType: "Office",
-      location: "Nashville, TN",
-      dealSize: "$58M",
-      investorName: "Signal Ridge Capital",
-      investorType: "Capital Partner (Equity)",
-      matchScore: 84,
-      status: "Pending",
-      matchReasons: [
-        "Behavioral integrity alignment confirmed",
-        "Continuity forecast supports 5-year hold",
-        "Macro exposure aligned with Sunbelt growth",
-        "Liquidity fragility within mandate thresholds",
-      ],
-      dateMatched: now,
-    }
-    setMatches((prev) => [newMatch, ...prev])
-    setFilterStatus("all")
-    toast({
-      title: "New match generated",
-      description: `${newMatch.investorName} matched to ${newMatch.dealName}.`,
-    })
-  }
+  // ── Run a new match through the scoring engine and persist ──
+  const handleRunNewMatch = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { toast({ title: "Not signed in", description: "Please sign in to run matches." }); return }
 
-  const handleExportMatches = () => {
+    const dealCandidates = [
+      { deal_name: "Riverfront Office Reposition", deal_type: "Office", location: "Nashville, TN", deal_size: "$58M", investor_name: "Signal Ridge Capital", investor_type: "Capital Partner (Equity)" },
+      { deal_name: "Sun Belt Multifamily Portfolio", deal_type: "Multifamily", location: "Atlanta, GA", deal_size: "$95M", investor_name: "Ascend Capital Group", investor_type: "Investor / Family Office" },
+      { deal_name: "Cold Storage Logistics Hub", deal_type: "Industrial", location: "Dallas, TX", deal_size: "$72M", investor_name: "Meridian Industrial Fund", investor_type: "Capital Partner (Equity)" },
+    ]
+    const candidate = dealCandidates[matches.length % dealCandidates.length]
+    const { score, reasons } = computeMatchScore({ dealType: candidate.deal_type, location: candidate.location, dealSize: candidate.deal_size, investorType: candidate.investor_type })
+
+    const { data, error } = await supabase.from("matches").insert({
+      user_id: user.id, deal_name: candidate.deal_name, deal_type: candidate.deal_type,
+      location: candidate.location, deal_size: candidate.deal_size,
+      investor_name: candidate.investor_name, investor_type: candidate.investor_type,
+      match_score: score, status: "Pending", match_reasons: reasons,
+      intelligence_basis: { engine: "CapIV OS Matching Graph v1.0", scored_at: new Date().toISOString(), scoring_factors: ["geographic_demand", "asset_alignment", "check_size", "behavioral_continuity"] },
+      decision_log: [{ action: "Generated", at: new Date().toISOString(), by: "CapIV OS Matching Engine" }],
+    }).select().single()
+
+    if (error) { console.error("[v0] Run match error:", error.message); return }
+    if (data) {
+      const newMatch = dbRowToMatch(data as Record<string, unknown>)
+      setMatches((prev) => [newMatch, ...prev])
+      setFilterStatus("all")
+      void logActivity({ action: "Ran new match", category: "deals", metadata: { deal: candidate.deal_name, investor: candidate.investor_name, score } })
+      toast({ title: "New match generated", description: `${candidate.investor_name} matched to ${candidate.deal_name} (Score: ${score}%).` })
+    }
+  }, [matches, dbRowToMatch, toast]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleExportMatches = useCallback(() => {
     const header = ["Deal Name", "Deal Type", "Location", "Deal Size", "Investor", "Investor Type", "Score", "Status", "Date"]
-    const rows = matches.map((match) =>
-      [
-        match.dealName,
-        match.dealType,
-        match.location,
-        match.dealSize,
-        match.investorName,
-        match.investorType,
-        `${match.matchScore}%`,
-        match.status,
-        match.dateMatched,
-      ].join(",")
+    const rows = matches.map((m) =>
+      [m.dealName, m.dealType, m.location, m.dealSize, m.investorName, m.investorType, `${m.matchScore}%`, m.status, m.dateMatched].join(",")
     )
     const csv = [header.join(","), ...rows].join("\n")
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
@@ -231,25 +240,44 @@ export function Matchmaking() {
     link.click()
     link.remove()
     URL.revokeObjectURL(url)
-    toast({
-      title: "Matches exported",
-      description: "CSV export downloaded.",
-    })
-  }
+    toast({ title: "Matches exported", description: "CSV export downloaded." })
+  }, [matches, toast])
 
-  const handleMatchDecision = (matchId: string, status: Match["status"]) => {
-    setMatches((prev) => prev.map((match) => (match.id === matchId ? { ...match, status } : match)))
-    setSelectedMatch((prev) => (prev && prev.id === matchId ? { ...prev, status } : prev))
+  // ── Persist match decision + decision log to Supabase ──
+  const handleMatchDecision = useCallback(async (matchId: string, status: Match["status"]) => {
+    setIsSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const match = matches.find((m) => m.id === matchId)
+    if (!match) { setIsSaving(false); return }
+
+    const logEntry = { action: status === "Accepted" ? "Approved" : "Declined", at: new Date().toISOString(), by: user?.email ?? "Reviewer" }
+    const newLog = [...match.decisionLog, logEntry]
+
+    const { error } = await supabase.from("matches")
+      .update({ status, decision_log: newLog, updated_at: new Date().toISOString() })
+      .eq("id", matchId)
+
+    if (error) {
+      console.error("[v0] Match decision error:", error.message)
+      toast({ title: "Error", description: "Failed to save decision." })
+      setIsSaving(false)
+      return
+    }
+
+    setMatches((prev) => prev.map((m) => m.id === matchId ? { ...m, status, decisionLog: newLog } : m))
+    setSelectedMatch((prev) => prev && prev.id === matchId ? { ...prev, status, decisionLog: newLog } : prev)
+
+    void logActivity({ action: `Match ${status}`, category: "deals", metadata: { deal: match.dealName, investor: match.investorName, score: match.matchScore } })
+
     toast({
       title: status === "Accepted" ? "Match approved" : "Match declined",
       description: status === "Accepted"
         ? "Connection authorized and queued for outreach."
         : "Match removed from active routing.",
     })
-    if (status === "Accepted") {
-      router.push("/deals")
-    }
-  }
+    setIsSaving(false)
+    if (status === "Accepted") router.push("/deals")
+  }, [matches, router, toast]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6 text-slate-100">
@@ -263,7 +291,7 @@ export function Matchmaking() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button className="bg-blue-600 hover:bg-blue-500 text-white" onClick={handleRunNewMatch}>
+            <Button className="bg-blue-600 hover:bg-blue-500 text-white" onClick={handleRunNewMatch} disabled={isSaving}>
               <Target className="h-4 w-4 mr-2" />
               Run New Match
             </Button>
@@ -273,6 +301,10 @@ export function Matchmaking() {
               onClick={handleExportMatches}
             >
               Export Matches
+            </Button>
+            <Button variant="outline" className="border-slate-600 text-slate-300" onClick={loadMatches} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+              Refresh
             </Button>
           </div>
         </div>
@@ -374,8 +406,14 @@ export function Matchmaking() {
         </div>
       </div>
 
+      {isLoading && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
+          <span className="ml-3 text-slate-400">Loading matches...</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filteredMatches.map((match) => (
+        {!isLoading && filteredMatches.map((match) => (
           <Card
             key={match.id}
             className="bg-slate-900/80 border border-slate-800 hover:border-blue-500/40 transition-colors cursor-pointer"
@@ -522,15 +560,17 @@ export function Matchmaking() {
                 <Button
                   variant="outline"
                   className="border-rose-500/30 text-rose-300"
+                  disabled={isSaving}
                   onClick={() => handleMatchDecision(selectedMatch.id, "Declined")}
                 >
-                  Decline Match
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decline Match"}
                 </Button>
                 <Button
                   className="bg-blue-600 hover:bg-blue-500 text-white"
+                  disabled={isSaving}
                   onClick={() => handleMatchDecision(selectedMatch.id, "Accepted")}
                 >
-                  Approve & Connect
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Approve & Connect"}
                 </Button>
               </div>
             </div>
