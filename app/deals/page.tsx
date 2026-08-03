@@ -17,9 +17,10 @@ import {
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
-import { Search, Plus, TrendingUp, DollarSign, Calendar, MapPin, Download } from "lucide-react"
+import { Search, Plus, TrendingUp, DollarSign, Calendar, MapPin, Download, Upload, Sparkles } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { DashboardShell } from "@/components/dashboard-shell"
+import { DealUploadDialog, type ExtractedDealFields } from "@/components/deal-upload-dialog"
 
 interface Deal {
   id: number
@@ -367,6 +368,8 @@ export default function DealsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isUploadOpen, setIsUploadOpen] = useState(false)
+  const [prefilledFromUpload, setPrefilledFromUpload] = useState(false)
   const [newDeal, setNewDeal] = useState<Omit<Deal, "id">>(createEmptyDeal())
   const [interestedDeals, setInterestedDeals] = useState<number[]>([])
 
@@ -418,7 +421,31 @@ export default function DealsPage() {
     setIsAddDialogOpen(open)
     if (!open) {
       setNewDeal(createEmptyDeal())
+      setPrefilledFromUpload(false)
     }
+  }
+
+  // Map AI-extracted document fields onto this page's Deal schema, then open the Add Deal form
+  const handlePopulateFromUpload = (fields: ExtractedDealFields) => {
+    const clean = (value: string) => (value && value !== "—" ? value : "")
+    setNewDeal({
+      name: clean(fields.title),
+      location: clean(fields.location),
+      type: clean(fields.assetType),
+      status: "Active",
+      investment: clean(fields.dealSize) || clean(fields.maxRaise),
+      irr: clean(fields.targetReturn),
+      timeline: clean(fields.holdPeriod),
+      sponsor: clean(fields.sponsor),
+      description: clean(fields.description),
+    })
+    setPrefilledFromUpload(true)
+    setIsUploadOpen(false)
+    setIsAddDialogOpen(true)
+    toast({
+      title: "Deal details extracted",
+      description: `Fields from ${fields.documentType.toLowerCase()} pre-filled. Review and save.`,
+    })
   }
 
   const handleDownloadDeal = (deal: Deal, analysis?: DealAnalysis) => {
@@ -466,18 +493,37 @@ export default function DealsPage() {
                 dark workspace.
               </p>
             </div>
-            <Dialog open={isAddDialogOpen} onOpenChange={handleAddDialogChange}>
-              <DialogTrigger asChild>
-                <Button className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Deal
-                </Button>
-              </DialogTrigger>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setIsUploadOpen(true)}
+                className="border-slate-700 bg-slate-900/60 text-slate-200 hover:border-blue-500/50 hover:text-white px-6 py-3 rounded-xl"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Import from Document
+              </Button>
+              <Dialog open={isAddDialogOpen} onOpenChange={handleAddDialogChange}>
+                <DialogTrigger asChild>
+                  <Button className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Deal
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="sm:max-w-lg bg-slate-900 border border-slate-800 text-slate-200">
                 <DialogHeader>
-                  <DialogTitle className="text-white">Add New Deal</DialogTitle>
+                  <DialogTitle className="text-white flex items-center gap-2">
+                    Add New Deal
+                    {prefilledFromUpload && (
+                      <Badge className="bg-blue-500/10 text-blue-200 border border-blue-500/40 text-[11px] font-normal">
+                        <Sparkles className="w-3 h-3 mr-1" />
+                        Pre-filled from document
+                      </Badge>
+                    )}
+                  </DialogTitle>
                   <DialogDescription className="text-slate-400">
-                    Capture the headline details and add the opportunity to the live pipeline.
+                    {prefilledFromUpload
+                      ? "Review the AI-extracted details below, edit anything, then save to the live pipeline."
+                      : "Capture the headline details and add the opportunity to the live pipeline."}
                   </DialogDescription>
                 </DialogHeader>
                 <form className="space-y-4" onSubmit={handleAddDeal}>
@@ -601,8 +647,15 @@ export default function DealsPage() {
                   </div>
                 </form>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
+
+          <DealUploadDialog
+            open={isUploadOpen}
+            onOpenChange={setIsUploadOpen}
+            onPopulateForm={handlePopulateFromUpload}
+          />
 
           <div className="rounded-3xl border border-slate-800/70 bg-slate-900/70 p-6 shadow-lg shadow-blue-500/5">
             <div className="relative max-w-xl">
