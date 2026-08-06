@@ -16,24 +16,25 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
-import { Search, Plus, TrendingUp, DollarSign, Calendar, MapPin, Download, Upload, Sparkles } from "lucide-react"
+import {
+  Search, Plus, TrendingUp, DollarSign, Calendar, MapPin, Download, Upload, Sparkles,
+  Layers, ShieldCheck, Hash, Target, Gauge,
+} from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { DealUploadDialog, type ExtractedDealFields } from "@/components/deal-upload-dialog"
-
-interface Deal {
-  id: number
-  name: string
-  location: string
-  type: string
-  status: "Active" | "Due Diligence" | "Closed" | "Watch"
-  investment: string
-  irr: string
-  timeline: string
-  sponsor: string
-  description: string
-}
+import {
+  type Deal,
+  DEAL_TYPES, SOURCE_CHANNELS, DATA_CLASSIFICATIONS, TRANSACTION_PURPOSES,
+  DEAL_STAGES, REQUEST_TYPES, PARTY_ROLES, LIFECYCLE_STATES,
+  dealTypeLabel, dealTypeShort, sourceChannelLabel, dataClassificationLabel,
+  transactionPurposeLabel, dealStageLabel, requestTypeLabel, partyRoleLabel,
+  lifecycleLabel, lifecycleBadge, classificationBadge,
+  generateReferenceCode, evaluateCompletion, GATES, TAXONOMY_VERSION,
+  type LifecycleState,
+} from "@/lib/deal-schema"
 
 interface DealAnalysis {
   score: string
@@ -47,66 +48,110 @@ interface DealAnalysis {
 const initialDeals: Deal[] = [
   {
     id: 1,
+    referenceCode: "CAPIV-DL-2026-000481",
+    dealTypePrimary: "RE_DIRECT",
+    sourceChannel: "broker",
+    dataClassification: "restricted",
+    taxonomyVersion: TAXONOMY_VERSION,
     name: "Harbor View Apartments",
-    location: "Austin, TX",
-    type: "Multifamily",
-    status: "Active",
-    investment: "$15M",
-    irr: "14.2%",
-    timeline: "Q2 2025",
-    sponsor: "Harbor Partners",
-    description:
+    summary:
       "198-unit Class B+ value-add opportunity with strong leasing velocity and 320 bps upside through renovation program.",
+    transactionPurpose: "acquisition",
+    dealStage: "under_contract",
+    lifecycleState: "MATCH_READY",
+    assetClass: "Multifamily",
+    geography: "Austin, TX",
+    requestType: "JV",
+    capitalNeedTotal: "$15M",
+    capitalNeedMinimum: "$250,000",
+    currency: "USD",
+    useOfProceeds: "Acquisition + $3.2M interior renovation program",
+    targetCloseDate: "Q2 2026",
+    sponsor: "Harbor Partners",
+    sponsorRole: "sponsor",
+    targetIrr: "14.2%",
+    targetMoic: "1.9x",
   },
   {
     id: 2,
+    referenceCode: "CAPIV-DL-2026-000482",
+    dealTypePrimary: "RE_DIRECT",
+    sourceChannel: "direct",
+    dataClassification: "restricted",
+    taxonomyVersion: TAXONOMY_VERSION,
     name: "Downtown Office Complex",
-    location: "Dallas, TX",
-    type: "Office",
-    status: "Due Diligence",
-    investment: "$32M",
-    irr: "12.8%",
-    timeline: "Q3 2025",
-    sponsor: "Sterling Capital",
-    description:
+    summary:
       "Two-tower CBD office reposition. Anchored leases in negotiation with corporate tenants; T-12 occupancy at 84%.",
+    transactionPurpose: "recap",
+    dealStage: "diligence",
+    lifecycleState: "VERIFICATION_IN_REVIEW",
+    assetClass: "Office",
+    geography: "Dallas, TX",
+    requestType: "equity",
+    capitalNeedTotal: "$32M",
+    capitalNeedMinimum: "$500,000",
+    currency: "USD",
+    useOfProceeds: "Recapitalization + TI/LC reserve",
+    targetCloseDate: "Q3 2026",
+    sponsor: "Sterling Capital",
+    sponsorRole: "sponsor",
+    targetIrr: "12.8%",
+    targetMoic: "1.7x",
   },
   {
     id: 3,
+    referenceCode: "CAPIV-DL-2026-000483",
+    dealTypePrimary: "RE_DIRECT",
+    sourceChannel: "partner",
+    dataClassification: "internal",
+    taxonomyVersion: TAXONOMY_VERSION,
     name: "Retail Shopping Center",
-    location: "Houston, TX",
-    type: "Retail",
-    status: "Closed",
-    investment: "$8.5M",
-    irr: "16.1%",
-    timeline: "Q1 2025",
-    sponsor: "Oakwood Holdings",
-    description:
+    summary:
       "Stabilized grocery-anchored retail strip with 12-pad expansion potential and signed LOIs for two national tenants.",
+    transactionPurpose: "acquisition",
+    dealStage: "closing",
+    lifecycleState: "EXECUTION_HANDOFF",
+    assetClass: "Retail",
+    geography: "Houston, TX",
+    requestType: "equity",
+    capitalNeedTotal: "$8.5M",
+    capitalNeedMinimum: "$100,000",
+    currency: "USD",
+    useOfProceeds: "Acquisition + pad development",
+    targetCloseDate: "Q1 2026",
+    sponsor: "Oakwood Holdings",
+    sponsorRole: "sponsor",
+    targetIrr: "16.1%",
+    targetMoic: "2.1x",
   },
 ]
 
 const generatePreAnalysis = (deal: Deal): DealAnalysis => {
-  const mapping: Record<Deal["status"], { score: string; riskBand: string }> = {
-    Active: { score: "82 / 100", riskBand: "Moderate-Low" },
-    "Due Diligence": { score: "78 / 100", riskBand: "Moderate" },
-    Closed: { score: "88 / 100", riskBand: "Low" },
-    Watch: { score: "71 / 100", riskBand: "Elevated" },
+  const phase = LIFECYCLE_STATES.includes(deal.lifecycleState) ? deal.lifecycleState : "DRAFT"
+  const mapping: Partial<Record<LifecycleState, { score: string; riskBand: string }>> = {
+    VERIFIED: { score: "88 / 100", riskBand: "Low" },
+    EXECUTION_HANDOFF: { score: "90 / 100", riskBand: "Low" },
+    INTRODUCTION_APPROVED: { score: "86 / 100", riskBand: "Moderate-Low" },
+    INTRODUCTION_ELIGIBLE: { score: "84 / 100", riskBand: "Moderate-Low" },
+    MATCH_READY: { score: "82 / 100", riskBand: "Moderate-Low" },
+    VERIFICATION_IN_REVIEW: { score: "78 / 100", riskBand: "Moderate" },
+    DILIGENCE: { score: "77 / 100", riskBand: "Moderate" },
+    PROVISIONALLY_MATCHABLE: { score: "74 / 100", riskBand: "Elevated" },
   }
+  const defaults = mapping[phase] ?? { score: "71 / 100", riskBand: "Elevated" }
+  const elevated = defaults.riskBand === "Elevated"
 
-  const defaults = mapping[deal.status]
   return {
     score: defaults.score,
     riskBand: defaults.riskBand,
-    liquidityWindow: deal.timeline,
-    aiSummary: `AI signal suggests ${deal.type.toLowerCase()} exposure with ${deal.irr} target IRR remains ${
-      deal.status === "Watch" ? "sensitive to market shifts" : "within mandate tolerances"
+    liquidityWindow: deal.targetCloseDate,
+    aiSummary: `AI signal suggests ${deal.assetClass.toLowerCase()} exposure with ${deal.targetIrr || "an undisclosed"} target IRR remains ${
+      elevated ? "sensitive to market shifts" : "within mandate tolerances"
     }.`,
     underwritingSync: `/capiv-iq?tab=underwriting&deal=${deal.id}`,
-    stressNotes:
-      deal.status === "Watch"
-        ? "Recommend enhanced lease verification and collateral audit prior to commitment."
-        : "Scenario tests fall within target covenants; proceed to underwriting when ready.",
+    stressNotes: elevated
+      ? "Recommend enhanced lease verification and collateral audit prior to commitment."
+      : "Scenario tests fall within target covenants; proceed to underwriting when ready.",
   }
 }
 
@@ -139,27 +184,29 @@ const wrapText = (value: string, maxLength = 88) => {
 
 const buildDealPdf = (deal: Deal, analysis?: DealAnalysis) => {
   const title = sanitize(deal.name || "CapIV Opportunity")
-  const subtitleParts = [deal.location, deal.type, deal.status].filter(Boolean)
+  const subtitleParts = [deal.referenceCode, deal.geography, deal.assetClass, lifecycleLabel(deal.lifecycleState)].filter(Boolean)
   const subtitle = sanitize(subtitleParts.join(" • ") || "Live opportunity inside CapIV Command")
 
   const snapshotLines = [
-    `Sponsor: ${deal.sponsor || "TBD"}`,
-    `Property Type: ${deal.type || "Unspecified"}`,
-    `Status: ${deal.status}`,
-    `Capital Request: ${deal.investment || "Pending"}`,
-    `Target IRR: ${deal.irr || "In diligence"}`,
-    `Liquidity Window: ${deal.timeline || "Call to confirm"}`,
+    `Sponsor: ${deal.sponsor || "TBD"} (${partyRoleLabel(deal.sponsorRole)})`,
+    `Deal Type: ${dealTypeLabel(deal.dealTypePrimary)}`,
+    `Asset Class: ${deal.assetClass || "Unspecified"}`,
+    `Lifecycle State: ${lifecycleLabel(deal.lifecycleState)}`,
+    `Capital Request: ${deal.capitalNeedTotal || "Pending"} ${deal.currency} (${requestTypeLabel(deal.requestType)})`,
+    `Target IRR / MOIC: ${deal.targetIrr || "In diligence"} / ${deal.targetMoic || "—"}`,
+    `Target Close: ${deal.targetCloseDate || "Call to confirm"}`,
   ]
 
   const propertyHighlights = [
-    `Primary Market: ${deal.location || "To be announced"}`,
+    `Primary Market: ${deal.geography || "To be announced"}`,
+    `Transaction Purpose: ${transactionPurposeLabel(deal.transactionPurpose)}`,
+    `Deal Stage: ${dealStageLabel(deal.dealStage)}`,
     `Mandate Alignment: ${analysis?.riskBand || "CapIV reviewing"}`,
     `Score: ${analysis?.score || "Awaiting full underwriting"}`,
-    `Watch Notes: ${analysis?.stressNotes || "No elevated risks logged."}`,
   ]
 
   const overviewLines = wrapText(
-    deal.description ||
+    deal.summary ||
       "Sponsor has not provided a full narrative yet. CapIV diligence will populate this section as documents are received.",
   )
 
@@ -354,15 +401,28 @@ export default function DealsPage() {
   const { toast } = useToast()
   const router = useRouter()
   const createEmptyDeal = (): Omit<Deal, "id"> => ({
+    referenceCode: generateReferenceCode(),
+    dealTypePrimary: "RE_DIRECT",
+    sourceChannel: "direct",
+    dataClassification: "internal",
+    taxonomyVersion: TAXONOMY_VERSION,
     name: "",
-    location: "",
-    type: "",
-    status: "Active",
-    investment: "",
-    irr: "",
-    timeline: "",
+    summary: "",
+    transactionPurpose: "acquisition",
+    dealStage: "sourcing",
+    lifecycleState: "DRAFT",
+    assetClass: "",
+    geography: "",
+    requestType: "equity",
+    capitalNeedTotal: "",
+    capitalNeedMinimum: "",
+    currency: "USD",
+    useOfProceeds: "",
+    targetCloseDate: "",
     sponsor: "",
-    description: "",
+    sponsorRole: "sponsor",
+    targetIrr: "",
+    targetMoic: "",
   })
   const [deals, setDeals] = useState<Deal[]>(initialDeals)
   const [searchTerm, setSearchTerm] = useState("")
@@ -379,24 +439,11 @@ export default function DealsPage() {
       return deals
     }
     return deals.filter((deal) => {
-      const haystack = `${deal.name} ${deal.location} ${deal.type} ${deal.status} ${deal.sponsor}`.toLowerCase()
+      const haystack = `${deal.name} ${deal.referenceCode} ${deal.geography} ${deal.assetClass} ${dealTypeLabel(deal.dealTypePrimary)} ${lifecycleLabel(deal.lifecycleState)} ${deal.sponsor}`.toLowerCase()
       return haystack.includes(term)
     })
   }, [deals, searchTerm])
   const selectedDealAnalysis = selectedDeal ? generatePreAnalysis(selectedDeal) : null
-
-  const getStatusBadgeClass = (status: Deal["status"]) => {
-    if (status === "Active") {
-      return "bg-emerald-500/15 text-emerald-200 border border-emerald-500/30"
-    }
-    if (status === "Closed") {
-      return "bg-slate-800 text-slate-300 border border-slate-700"
-    }
-    if (status === "Watch") {
-      return "bg-orange-500/15 text-orange-200 border border-orange-500/30"
-    }
-    return "bg-amber-500/15 text-amber-200 border border-amber-500/30"
-  }
 
   const updateNewDeal = <K extends keyof Omit<Deal, "id">>(field: K, value: Omit<Deal, "id">[K]) => {
     setNewDeal((prev) => ({ ...prev, [field]: value }))
@@ -425,19 +472,32 @@ export default function DealsPage() {
     }
   }
 
-  // Map AI-extracted document fields onto this page's Deal schema, then open the Add Deal form
+  // Map AI-extracted document fields onto the canonical Deal envelope, then open the Add Deal form
   const handlePopulateFromUpload = (fields: ExtractedDealFields) => {
     const clean = (value: string) => (value && value !== "—" ? value : "")
     setNewDeal({
+      referenceCode: generateReferenceCode(),
+      dealTypePrimary: fields.dealTypePrimary,
+      sourceChannel: "import",
+      dataClassification: "restricted",
+      taxonomyVersion: TAXONOMY_VERSION,
       name: clean(fields.title),
-      location: clean(fields.location),
-      type: clean(fields.assetType),
-      status: "Active",
-      investment: clean(fields.dealSize) || clean(fields.maxRaise),
-      irr: clean(fields.targetReturn),
-      timeline: clean(fields.holdPeriod),
+      summary: clean(fields.description),
+      transactionPurpose: fields.transactionPurpose,
+      dealStage: "sourcing",
+      lifecycleState: "RECEIVED",
+      assetClass: clean(fields.assetType),
+      geography: clean(fields.location),
+      requestType: fields.requestType,
+      capitalNeedTotal: clean(fields.dealSize) || clean(fields.maxRaise),
+      capitalNeedMinimum: clean(fields.minimumInvestment),
+      currency: "USD",
+      useOfProceeds: clean(fields.useOfProceeds),
+      targetCloseDate: clean(fields.holdPeriod),
       sponsor: clean(fields.sponsor),
-      description: clean(fields.description),
+      sponsorRole: "sponsor",
+      targetIrr: clean(fields.targetReturn),
+      targetMoic: clean(fields.targetMoic),
     })
     setPrefilledFromUpload(true)
     setIsUploadOpen(false)
@@ -509,7 +569,7 @@ export default function DealsPage() {
                     Add Deal
                   </Button>
                 </DialogTrigger>
-              <DialogContent className="sm:max-w-lg bg-slate-900 border border-slate-800 text-slate-200">
+              <DialogContent className="sm:max-w-2xl max-h-[88vh] overflow-y-auto bg-slate-900 border border-slate-800 text-slate-200">
                 <DialogHeader>
                   <DialogTitle className="text-white flex items-center gap-2">
                     Add New Deal
@@ -523,115 +583,222 @@ export default function DealsPage() {
                   <DialogDescription className="text-slate-400">
                     {prefilledFromUpload
                       ? "Review the AI-extracted details below, edit anything, then save to the live pipeline."
-                      : "Capture the headline details and add the opportunity to the live pipeline."}
+                      : "Capture the canonical deal envelope and add the opportunity to the live pipeline."}
                   </DialogDescription>
                 </DialogHeader>
-                <form className="space-y-4" onSubmit={handleAddDeal}>
-                  <div className="space-y-2">
-                    <Label htmlFor="deal-name">Deal name</Label>
-                    <Input
-                      id="deal-name"
-                      required
-                      placeholder="e.g. Lakeside Industrial Portfolio"
-                      value={newDeal.name}
-                      onChange={(event) => updateNewDeal("name", event.target.value)}
-                      className="bg-slate-950 border-slate-800 text-slate-100"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <form className="space-y-6" onSubmit={handleAddDeal}>
+                  {/* Identity & Governance */}
+                  <section className="space-y-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-blue-400/70">Identity &amp; Governance</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Reference code</Label>
+                        <Input
+                          value={newDeal.referenceCode}
+                          onChange={(e) => updateNewDeal("referenceCode", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100 font-mono text-xs"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Primary deal type</Label>
+                        <Select value={newDeal.dealTypePrimary} onValueChange={(v) => updateNewDeal("dealTypePrimary", v as Deal["dealTypePrimary"])}>
+                          <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-100"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-700 text-slate-100">
+                            {DEAL_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Source channel</Label>
+                        <Select value={newDeal.sourceChannel} onValueChange={(v) => updateNewDeal("sourceChannel", v as Deal["sourceChannel"])}>
+                          <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-100"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-700 text-slate-100">
+                            {SOURCE_CHANNELS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Data classification</Label>
+                        <Select value={newDeal.dataClassification} onValueChange={(v) => updateNewDeal("dataClassification", v as Deal["dataClassification"])}>
+                          <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-100"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-700 text-slate-100">
+                            {DATA_CLASSIFICATIONS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Core Profile */}
+                  <section className="space-y-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-blue-400/70">Core Profile</p>
                     <div className="space-y-2">
-                      <Label htmlFor="deal-location">Location</Label>
+                      <Label htmlFor="deal-name">Display name</Label>
                       <Input
-                        id="deal-location"
+                        id="deal-name"
                         required
-                        placeholder="City, State"
-                        value={newDeal.location}
-                        onChange={(event) => updateNewDeal("location", event.target.value)}
+                        placeholder="e.g. Lakeside Industrial Portfolio"
+                        value={newDeal.name}
+                        onChange={(e) => updateNewDeal("name", e.target.value)}
                         className="bg-slate-950 border-slate-800 text-slate-100"
                       />
                     </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="deal-geo">Geography</Label>
+                        <Input
+                          id="deal-geo"
+                          required
+                          placeholder="City, State"
+                          value={newDeal.geography}
+                          onChange={(e) => updateNewDeal("geography", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="deal-asset">Asset class</Label>
+                        <Input
+                          id="deal-asset"
+                          required
+                          placeholder="Multifamily, Industrial..."
+                          value={newDeal.assetClass}
+                          onChange={(e) => updateNewDeal("assetClass", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Transaction purpose</Label>
+                        <Select value={newDeal.transactionPurpose} onValueChange={(v) => updateNewDeal("transactionPurpose", v as Deal["transactionPurpose"])}>
+                          <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-100"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-700 text-slate-100">
+                            {TRANSACTION_PURPOSES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Deal stage</Label>
+                        <Select value={newDeal.dealStage} onValueChange={(v) => updateNewDeal("dealStage", v as Deal["dealStage"])}>
+                          <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-100"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-700 text-slate-100">
+                            {DEAL_STAGES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Lifecycle state</Label>
+                        <Select value={newDeal.lifecycleState} onValueChange={(v) => updateNewDeal("lifecycleState", v as Deal["lifecycleState"])}>
+                          <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-100"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-700 text-slate-100 max-h-64">
+                            {LIFECYCLE_STATES.map((s) => <SelectItem key={s} value={s}>{lifecycleLabel(s)}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Parties */}
+                  <section className="space-y-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-blue-400/70">Lead Party</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="deal-sponsor">Sponsor / party</Label>
+                        <Input
+                          id="deal-sponsor"
+                          required
+                          placeholder="Party name"
+                          value={newDeal.sponsor}
+                          onChange={(e) => updateNewDeal("sponsor", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Role</Label>
+                        <Select value={newDeal.sponsorRole} onValueChange={(v) => updateNewDeal("sponsorRole", v as Deal["sponsorRole"])}>
+                          <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-100"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-700 text-slate-100">
+                            {PARTY_ROLES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Capital Request */}
+                  <section className="space-y-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-blue-400/70">Capital Request</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <Label>Request type</Label>
+                        <Select value={newDeal.requestType} onValueChange={(v) => updateNewDeal("requestType", v as Deal["requestType"])}>
+                          <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-100"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-700 text-slate-100">
+                            {REQUEST_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Capital need</Label>
+                        <Input placeholder="$10M" value={newDeal.capitalNeedTotal}
+                          onChange={(e) => updateNewDeal("capitalNeedTotal", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Min. tranche</Label>
+                        <Input placeholder="$250K" value={newDeal.capitalNeedMinimum}
+                          onChange={(e) => updateNewDeal("capitalNeedMinimum", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Currency</Label>
+                        <Input placeholder="USD" value={newDeal.currency}
+                          onChange={(e) => updateNewDeal("currency", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100" />
+                      </div>
+                    </div>
                     <div className="space-y-2">
-                      <Label htmlFor="deal-type">Asset type</Label>
-                      <Input
-                        id="deal-type"
-                        required
-                        placeholder="Multifamily, Industrial..."
-                        value={newDeal.type}
-                        onChange={(event) => updateNewDeal("type", event.target.value)}
+                      <Label>Use of proceeds</Label>
+                      <Input placeholder="Acquisition + renovation capex" value={newDeal.useOfProceeds}
+                        onChange={(e) => updateNewDeal("useOfProceeds", e.target.value)}
+                        className="bg-slate-950 border-slate-800 text-slate-100" />
+                    </div>
+                  </section>
+
+                  {/* Economics & Timeline */}
+                  <section className="space-y-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-blue-400/70">Economics &amp; Timeline</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Target IRR</Label>
+                        <Input placeholder="14%" value={newDeal.targetIrr}
+                          onChange={(e) => updateNewDeal("targetIrr", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Target MOIC</Label>
+                        <Input placeholder="2.0x" value={newDeal.targetMoic}
+                          onChange={(e) => updateNewDeal("targetMoic", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Target close date</Label>
+                        <Input placeholder="Q4 2026" value={newDeal.targetCloseDate}
+                          onChange={(e) => updateNewDeal("targetCloseDate", e.target.value)}
+                          className="bg-slate-950 border-slate-800 text-slate-100" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="deal-summary">Summary</Label>
+                      <Textarea
+                        id="deal-summary"
+                        placeholder="Neutral description; thesis, business plan, and current diligence notes..."
+                        value={newDeal.summary}
+                        onChange={(e) => updateNewDeal("summary", e.target.value)}
                         className="bg-slate-950 border-slate-800 text-slate-100"
+                        rows={4}
                       />
                     </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="deal-status">Status</Label>
-                      <select
-                        id="deal-status"
-                        value={newDeal.status}
-                        onChange={(event) => updateNewDeal("status", event.target.value as Deal["status"])}
-                        className="w-full rounded-md border border-slate-800 bg-slate-950 text-slate-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                      >
-                        <option value="Active">Active</option>
-                        <option value="Due Diligence">Due Diligence</option>
-                        <option value="Closed">Closed</option>
-                        <option value="Watch">Watch</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="deal-sponsor">Sponsor</Label>
-                      <Input
-                        id="deal-sponsor"
-                        required
-                        placeholder="Sponsor name"
-                        value={newDeal.sponsor}
-                        onChange={(event) => updateNewDeal("sponsor", event.target.value)}
-                        className="bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="deal-investment">Investment</Label>
-                      <Input
-                        id="deal-investment"
-                        placeholder="$10M"
-                        value={newDeal.investment}
-                        onChange={(event) => updateNewDeal("investment", event.target.value)}
-                        className="bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="deal-irr">Target IRR</Label>
-                      <Input
-                        id="deal-irr"
-                        placeholder="14%"
-                        value={newDeal.irr}
-                        onChange={(event) => updateNewDeal("irr", event.target.value)}
-                        className="bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="deal-timeline">Timeline</Label>
-                      <Input
-                        id="deal-timeline"
-                        placeholder="Q4 2025"
-                        value={newDeal.timeline}
-                        onChange={(event) => updateNewDeal("timeline", event.target.value)}
-                        className="bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="deal-description">Investment brief</Label>
-                    <Textarea
-                      id="deal-description"
-                      placeholder="Key thesis, business plan, and any current diligence notes..."
-                      value={newDeal.description}
-                      onChange={(event) => updateNewDeal("description", event.target.value)}
-                      className="bg-slate-950 border-slate-800 text-slate-100"
-                      rows={4}
-                    />
-                  </div>
+                  </section>
+
                   <div className="flex items-center justify-end gap-2 pt-2">
                     <Button
                       type="button"
@@ -691,15 +858,21 @@ export default function DealsPage() {
                 >
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <CardTitle className="text-xl text-white">{deal.name}</CardTitle>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">
+                            <Hash className="w-3 h-3 mr-1" />
+                            {deal.referenceCode}
+                          </Badge>
+                        </div>
+                        <CardTitle className="text-xl text-white truncate">{deal.name}</CardTitle>
                         <div className="mt-2 flex items-center text-sm text-slate-400">
                           <MapPin className="w-4 h-4 mr-2 text-blue-400" />
-                          <span>{deal.location}</span>
+                          <span>{deal.geography}</span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <Badge className={getStatusBadgeClass(deal.status)}>{deal.status}</Badge>
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <Badge className={lifecycleBadge(deal.lifecycleState)}>{lifecycleLabel(deal.lifecycleState)}</Badge>
                         {isInterested && (
                           <Badge className="bg-blue-500/10 text-blue-200 border border-blue-500/40 text-[11px]">
                             Interested
@@ -707,21 +880,44 @@ export default function DealsPage() {
                         )}
                       </div>
                     </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Badge className="bg-blue-500/10 text-blue-200 border border-blue-500/30 text-[10px]">
+                        <Layers className="w-3 h-3 mr-1" />
+                        {dealTypeShort(deal.dealTypePrimary)}
+                      </Badge>
+                      <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px]">
+                        {deal.assetClass}
+                      </Badge>
+                      <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px]">
+                        {requestTypeLabel(deal.requestType)}
+                      </Badge>
+                      <Badge className={`${classificationBadge(deal.dataClassification)} text-[10px]`}>
+                        <ShieldCheck className="w-3 h-3 mr-1" />
+                        {dataClassificationLabel(deal.dataClassification)}
+                      </Badge>
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-3 gap-3 text-sm">
                       <div>
-                        <p className="text-slate-400 uppercase tracking-[0.2em] text-xs mb-1">Investment</p>
-                        <p className="text-lg font-semibold text-slate-100 flex items-center">
-                          <DollarSign className="w-4 h-4 mr-2 text-blue-300" />
-                          {deal.investment}
+                        <p className="text-slate-400 uppercase tracking-[0.18em] text-[10px] mb-1">Capital</p>
+                        <p className="text-base font-semibold text-slate-100 flex items-center">
+                          <DollarSign className="w-4 h-4 mr-1 text-blue-300" />
+                          {deal.capitalNeedTotal || "—"}
                         </p>
                       </div>
                       <div>
-                        <p className="text-slate-400 uppercase tracking-[0.2em] text-xs mb-1">Target IRR</p>
-                        <p className="text-lg font-semibold text-slate-100 flex items-center">
-                          <TrendingUp className="w-4 h-4 mr-2 text-purple-300" />
-                          {deal.irr}
+                        <p className="text-slate-400 uppercase tracking-[0.18em] text-[10px] mb-1">Target IRR</p>
+                        <p className="text-base font-semibold text-slate-100 flex items-center">
+                          <TrendingUp className="w-4 h-4 mr-1 text-purple-300" />
+                          {deal.targetIrr || "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400 uppercase tracking-[0.18em] text-[10px] mb-1">MOIC</p>
+                        <p className="text-base font-semibold text-slate-100 flex items-center">
+                          <Target className="w-4 h-4 mr-1 text-emerald-300" />
+                          {deal.targetMoic || "—"}
                         </p>
                       </div>
                     </div>
@@ -732,14 +928,34 @@ export default function DealsPage() {
                         <span className="font-medium text-slate-100">{deal.sponsor}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Timeline</span>
+                        <span className="text-slate-500">Stage</span>
+                        <span className="font-medium text-slate-100">{dealStageLabel(deal.dealStage)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Target close</span>
                         <span className="flex items-center font-medium text-slate-100">
                           <Calendar className="w-4 h-4 mr-2 text-blue-300" />
-                          {deal.timeline}
+                          {deal.targetCloseDate || "—"}
                         </span>
                       </div>
-                      <p className="text-sm text-slate-400 leading-relaxed line-clamp-3">{deal.description}</p>
+                      <p className="text-sm text-slate-400 leading-relaxed line-clamp-2">{deal.summary}</p>
                     </div>
+
+                    {/* Completion gate progress */}
+                    {(() => {
+                      const completion = evaluateCompletion(deal)
+                      return (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                            <span>Completion · gate {completion.highestGate}</span>
+                            <span>{completion.percent}%</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                            <div className="h-full bg-blue-500/70" style={{ width: `${completion.percent}%` }} />
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     <div className="pt-2">
                       <Button
@@ -777,14 +993,17 @@ export default function DealsPage() {
               <DialogHeader className="space-y-4">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
                   <div>
+                    {selectedDeal && (
+                      <p className="text-xs font-mono text-slate-500 mb-1">{selectedDeal.referenceCode}</p>
+                    )}
                     <DialogTitle className="text-2xl text-white">{selectedDeal?.name}</DialogTitle>
                     <DialogDescription className="text-slate-400 text-sm">
-                      {selectedDeal?.location} · {selectedDeal?.type}
+                      {selectedDeal?.geography} · {selectedDeal?.assetClass} · {selectedDeal && dealTypeLabel(selectedDeal.dealTypePrimary)}
                     </DialogDescription>
                   </div>
                   {selectedDeal && (
                     <div className="flex flex-wrap gap-3">
-                      <Badge className={getStatusBadgeClass(selectedDeal.status)}>{selectedDeal.status}</Badge>
+                      <Badge className={lifecycleBadge(selectedDeal.lifecycleState)}>{lifecycleLabel(selectedDeal.lifecycleState)}</Badge>
                       <Button
                         variant="outline"
                         className="border-slate-700 text-slate-200 hover:bg-slate-800"
@@ -799,36 +1018,107 @@ export default function DealsPage() {
               </DialogHeader>
               {selectedDeal && (
                 <div className="h-[calc(85vh-140px)] overflow-y-auto space-y-6 pr-1">
+                  {/* Classification chips */}
+                  <div className="flex flex-wrap gap-2">
+                    <Badge className="bg-blue-500/10 text-blue-200 border border-blue-500/30 text-xs">
+                      <Layers className="w-3 h-3 mr-1" />
+                      {dealTypeLabel(selectedDeal.dealTypePrimary)}
+                    </Badge>
+                    <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-xs">
+                      {transactionPurposeLabel(selectedDeal.transactionPurpose)}
+                    </Badge>
+                    <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-xs">
+                      Stage · {dealStageLabel(selectedDeal.dealStage)}
+                    </Badge>
+                    <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-xs">
+                      {requestTypeLabel(selectedDeal.requestType)}
+                    </Badge>
+                    <Badge className={`${classificationBadge(selectedDeal.dataClassification)} text-xs`}>
+                      <ShieldCheck className="w-3 h-3 mr-1" />
+                      {dataClassificationLabel(selectedDeal.dataClassification)}
+                    </Badge>
+                    <Badge className="bg-slate-800 text-slate-400 border border-slate-700 text-xs">
+                      via {sourceChannelLabel(selectedDeal.sourceChannel)}
+                    </Badge>
+                  </div>
+
                   <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-6">
                     <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6 space-y-4">
-                      <p className="text-sm text-slate-300 leading-relaxed">{selectedDeal.description}</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs uppercase tracking-[0.18em] text-slate-500">
+                      <p className="text-sm text-slate-300 leading-relaxed">{selectedDeal.summary}</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs uppercase tracking-[0.18em] text-slate-500">
                         <div className="space-y-1">
-                          <span>Investment</span>
+                          <span>Capital Need</span>
                           <p className="text-base normal-case tracking-normal text-slate-100">
-                            {selectedDeal.investment}
+                            {selectedDeal.capitalNeedTotal || "—"} {selectedDeal.currency}
                           </p>
                         </div>
                         <div className="space-y-1">
+                          <span>Min. Tranche</span>
+                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.capitalNeedMinimum || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
                           <span>Target IRR</span>
-                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.irr}</p>
+                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.targetIrr || "—"}</p>
                         </div>
                         <div className="space-y-1">
-                          <span>Timeline</span>
-                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.timeline}</p>
+                          <span>Target MOIC</span>
+                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.targetMoic || "—"}</p>
                         </div>
                         <div className="space-y-1">
-                          <span>Sponsor</span>
-                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.sponsor}</p>
+                          <span>Target Close</span>
+                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.targetCloseDate || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span>Lead Party</span>
+                          <p className="text-base normal-case tracking-normal text-slate-100">
+                            {selectedDeal.sponsor} <span className="text-slate-500 text-xs">({partyRoleLabel(selectedDeal.sponsorRole)})</span>
+                          </p>
                         </div>
                       </div>
+                      <div className="pt-2 border-t border-slate-800">
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500 mb-1">Use of Proceeds</p>
+                        <p className="text-sm text-slate-300">{selectedDeal.useOfProceeds || "Not yet specified."}</p>
+                      </div>
                     </div>
+
+                    {/* Lifecycle completion gates */}
                     <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6 space-y-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Sponsor Notes</p>
-                      <p className="text-sm text-slate-300 leading-relaxed">
-                        {selectedDeal.sponsor} reports active engagement with lenders and key tenants to preserve yield
-                        targets. Relationship capital remains strong across the regional brokerage community.
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <Gauge className="w-4 h-4 text-blue-400" />
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Completion Gates</p>
+                      </div>
+                      {(() => {
+                        const completion = evaluateCompletion(selectedDeal)
+                        return (
+                          <>
+                            <div className="flex items-baseline justify-between">
+                              <span className="text-2xl font-semibold text-white">{completion.percent}%</span>
+                              <span className="text-xs text-slate-400">Highest gate · {completion.highestGate}</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                              <div className="h-full bg-blue-500/70" style={{ width: `${completion.percent}%` }} />
+                            </div>
+                            <ul className="space-y-2 text-sm">
+                              {completion.missingByGate.map((g) => {
+                                const passed = g.missing.length === 0
+                                return (
+                                  <li key={g.gate} className="flex items-start gap-2">
+                                    <span className={`mt-0.5 inline-flex h-4 w-8 shrink-0 items-center justify-center rounded text-[10px] font-mono ${passed ? "bg-emerald-500/20 text-emerald-200" : "bg-slate-800 text-slate-400"}`}>
+                                      {g.gate}
+                                    </span>
+                                    <span className={passed ? "text-slate-300" : "text-slate-400"}>
+                                      {g.name}
+                                      {!passed && (
+                                        <span className="block text-xs text-slate-500">Missing: {g.missing.join(", ")}</span>
+                                      )}
+                                    </span>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </>
+                        )
+                      })()}
                     </div>
                   </div>
 

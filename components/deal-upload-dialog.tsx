@@ -14,6 +14,7 @@ import {
   Upload, FileText, FileImage, CheckCircle2, AlertCircle,
   Loader2, X, Pencil, ArrowRight, Sparkles, RefreshCw,
 } from "lucide-react"
+import { DEAL_TYPES, TRANSACTION_PURPOSES, REQUEST_TYPES } from "@/lib/deal-schema"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -22,10 +23,21 @@ export interface ExtractedDealFields {
   sponsor: string
   location: string
   assetType: string
+  dealTypePrimary:
+    | "RE_DIRECT" | "PRIVATE_CREDIT" | "FUND_GP_LP" | "OPCO_EQUITY"
+    | "M_AND_A" | "SPV_COINVEST" | "PORTFOLIO_ASSET" | "DIGITAL_INTERFACE"
+  transactionPurpose:
+    | "acquisition" | "development" | "recap" | "refinance" | "growth"
+    | "buyout" | "liquidity" | "fundraise" | "other"
+  requestType:
+    | "equity" | "debt" | "preferred" | "mezzanine" | "JV" | "LP" | "GP"
+    | "co-invest" | "hybrid" | "other"
+  useOfProceeds: string
   dealSize: string
   investmentType: "Equity" | "Debt" | "Hybrid"
   riskProfile: "Core" | "Core-Plus" | "Value-Add" | "Opportunistic"
   targetReturn: string
+  targetMoic: string
   holdPeriod: string
   minimumInvestment: string
   maxRaise: string
@@ -513,6 +525,50 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
                 <Label className="text-slate-300 text-xs">Description (AI generated)</Label>
                 <Textarea value={editedFields.description} onChange={(e) => updateField("description", e.target.value)}
                   rows={3} className="bg-slate-900 border-slate-700 text-white text-sm resize-none" />
+              </div>
+
+              {/* CapIV Canonical Classification */}
+              <div className="col-span-2">
+                <p className="text-xs text-slate-400 mb-2 uppercase tracking-wider">CapIV Classification</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-400 text-xs">Primary Deal Type</Label>
+                    <Select value={editedFields.dealTypePrimary} onValueChange={(v) => updateField("dealTypePrimary", v as ExtractedDealFields["dealTypePrimary"])}>
+                      <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700">
+                        {DEAL_TYPES.map((t) => <SelectItem key={t.value} value={t.value} className="text-white">{t.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-400 text-xs">Transaction Purpose</Label>
+                    <Select value={editedFields.transactionPurpose} onValueChange={(v) => updateField("transactionPurpose", v as ExtractedDealFields["transactionPurpose"])}>
+                      <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700">
+                        {TRANSACTION_PURPOSES.map((t) => <SelectItem key={t.value} value={t.value} className="text-white">{t.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-400 text-xs">Request Type</Label>
+                    <Select value={editedFields.requestType} onValueChange={(v) => updateField("requestType", v as ExtractedDealFields["requestType"])}>
+                      <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700">
+                        {REQUEST_TYPES.map((t) => <SelectItem key={t.value} value={t.value} className="text-white">{t.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-slate-400 text-xs">Target MOIC</Label>
+                    <Input value={editedFields.targetMoic} onChange={(e) => updateField("targetMoic", e.target.value)}
+                      className="bg-slate-900 border-slate-700 text-white text-sm h-9" />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label className="text-slate-400 text-xs">Use of Proceeds</Label>
+                    <Input value={editedFields.useOfProceeds} onChange={(e) => updateField("useOfProceeds", e.target.value)}
+                      className="bg-slate-900 border-slate-700 text-white text-sm h-9" />
+                  </div>
+                </div>
               </div>
 
               {/* Key Metrics row */}

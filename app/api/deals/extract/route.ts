@@ -22,10 +22,22 @@ const dealExtractionSchema = z.object({
     'Multifamily', 'Industrial', 'Office', 'Retail', 'Mixed-Use',
     'Student Housing', 'Hotel', 'Self-Storage', 'Medical', 'Other'
   ]).describe('Primary asset class or property type'),
+  // CapIV canonical taxonomy fields
+  dealTypePrimary: z.enum([
+    'RE_DIRECT', 'PRIVATE_CREDIT', 'FUND_GP_LP', 'OPCO_EQUITY', 'M_AND_A', 'SPV_COINVEST', 'PORTFOLIO_ASSET', 'DIGITAL_INTERFACE'
+  ]).describe('CapIV primary deal type. RE_DIRECT=direct real estate equity/JV; PRIVATE_CREDIT=debt/loan; FUND_GP_LP=fund or GP-LP interest; OPCO_EQUITY=operating company equity; M_AND_A=company/asset acquisition; SPV_COINVEST=single-asset SPV or co-invest; PORTFOLIO_ASSET=grouped/multi-asset; DIGITAL_INTERFACE=tokenized. Default to RE_DIRECT for a single real estate asset.'),
+  transactionPurpose: z.enum([
+    'acquisition', 'development', 'recap', 'refinance', 'growth', 'buyout', 'liquidity', 'fundraise', 'other'
+  ]).describe('Primary transaction purpose'),
+  requestType: z.enum([
+    'equity', 'debt', 'preferred', 'mezzanine', 'JV', 'LP', 'GP', 'co-invest', 'hybrid', 'other'
+  ]).describe('Type of capital requested'),
+  useOfProceeds: z.string().describe('How the capital will be used, e.g. "Acquisition + $4M renovation capex", otherwise "—"'),
   dealSize: z.string().describe('Total deal size or raise amount, e.g. "$45M"'),
   investmentType: z.enum(['Equity', 'Debt', 'Hybrid']).describe('Type of capital: Equity, Debt, or Hybrid'),
   riskProfile: z.enum(['Core', 'Core-Plus', 'Value-Add', 'Opportunistic']).describe('Investment risk profile'),
   targetReturn: z.string().describe('Projected return, IRR, or equity multiple, e.g. "18-22% IRR" or "2.1x EM"'),
+  targetMoic: z.string().describe('Target equity multiple / MOIC, e.g. "2.1x", otherwise "—"'),
   holdPeriod: z.string().describe('Projected hold period, e.g. "5-7 years"'),
   minimumInvestment: z.string().describe('Minimum investor check size, e.g. "$250,000"'),
   maxRaise: z.string().describe('Maximum capital raise amount, e.g. "$45M"'),
