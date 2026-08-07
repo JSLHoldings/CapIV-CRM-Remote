@@ -43,6 +43,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   verification: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
   navigation: "bg-slate-500/15 text-slate-300 border-slate-500/30",
   admin: "bg-red-500/15 text-red-300 border-red-500/30",
+  security: "bg-rose-500/15 text-rose-300 border-rose-500/30",
   general: "bg-slate-700/40 text-slate-300 border-slate-600/30",
 }
 
@@ -54,6 +55,8 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   compliance: <Shield className="w-3.5 h-3.5" />,
   verification: <Shield className="w-3.5 h-3.5" />,
   admin: <UserPlus className="w-3.5 h-3.5" />,
+  security: <Shield className="w-3.5 h-3.5" />,
+  navigation: <Activity className="w-3.5 h-3.5" />,
   general: <Activity className="w-3.5 h-3.5" />,
 }
 
@@ -75,7 +78,7 @@ export function AdminActivityLog() {
   const [fetchError, setFetchError] = useState("")
   const [search, setSearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("all")
-  const [userFilter, setUserFilter] = useState("")
+  const [userFilter, setUserFilter] = useState("all")
   const [users, setUsers] = useState<{ id: string; email: string; name: string }[]>([])
   const [lastRefreshed, setLastRefreshed] = useState(new Date())
 
@@ -97,7 +100,7 @@ export function AdminActivityLog() {
       page: String(page),
       pageSize: String(PAGE_SIZE),
       category: categoryFilter,
-      userId: userFilter,
+      userId: userFilter === "all" ? "" : userFilter,
       search,
     })
 
@@ -254,12 +257,14 @@ export function AdminActivityLog() {
                 <SelectValue placeholder="All users" />
               </SelectTrigger>
               <SelectContent className="bg-slate-900 border-slate-700">
-                <SelectItem value="">All users</SelectItem>
-                {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.name || u.email}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">All users</SelectItem>
+                {users
+                  .filter((u) => u.id)
+                  .map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
