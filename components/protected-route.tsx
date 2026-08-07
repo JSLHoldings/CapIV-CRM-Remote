@@ -8,17 +8,24 @@ import { useAuth } from "@/hooks/use-auth"
 interface ProtectedRouteProps {
   children: React.ReactNode
   fallback?: React.ReactNode
+  /** When true, only users with the admin role may view the route; others are redirected home. */
+  requireAdmin?: boolean
 }
 
-export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, fallback, requireAdmin = false }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
 
+  const isAdmin = user?.role === "admin"
+
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (isLoading) return
+    if (!user) {
       router.push("/login")
+    } else if (requireAdmin && !isAdmin) {
+      router.push("/")
     }
-  }, [user, isLoading, router])
+  }, [user, isLoading, router, requireAdmin, isAdmin])
 
   if (isLoading) {
     return (
@@ -35,6 +42,10 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
 
   if (!user) {
     return null // Will redirect to login
+  }
+
+  if (requireAdmin && !isAdmin) {
+    return null // Will redirect home
   }
 
   return <>{children}</>

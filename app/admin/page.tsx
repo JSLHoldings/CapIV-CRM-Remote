@@ -24,7 +24,7 @@ export default function AdminDashboard() {
   ]
 
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requireAdmin>
       <DashboardShell>
         <div className="px-8 py-10">
           <div className="mx-auto max-w-6xl space-y-10">

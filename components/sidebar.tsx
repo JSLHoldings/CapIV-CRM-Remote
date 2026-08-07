@@ -25,6 +25,8 @@ export function Sidebar() {
     return () => clearInterval(interval)
   }, [])
 
+  const isAdmin = user?.role === "admin"
+
   const menuItems = [
     { id: "dashboard", label: "Dashboard", href: "/" },
     { id: "core", label: "CapIV Core", href: "/core" },
@@ -33,7 +35,8 @@ export function Sidebar() {
     { id: "capiv-iq", label: "CapIV IQ", href: "/capiv-iq" },
     { id: "capiv-eq", label: "CapIV EQ", href: "/capiv-eq" },
     { id: "account", label: "Account", href: "/account" },
-    { id: "admin", label: "Admin", href: "/admin", isAdmin: true },
+    // Admin console is only shown to users with the admin role.
+    ...(isAdmin ? [{ id: "admin", label: "Admin", href: "/admin", isAdmin: true }] : []),
   ]
 
   return (
@@ -62,11 +65,11 @@ export function Sidebar() {
                   isActive
                     ? "bg-blue-600 text-white hover:bg-blue-500"
                     : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                } ${item.isAdmin ? "border border-red-500/40" : ""}`}
+                } ${item.isAdmin ? "border border-blue-500/40" : ""}`}
               >
                 {item.label}
                 {item.isAdmin && (
-                  <Badge className="ml-auto text-[10px] bg-red-500/20 text-red-200 border-red-500/40">DEV</Badge>
+                  <Badge className="ml-auto text-[10px] bg-blue-500/20 text-blue-200 border-blue-500/40">ADMIN</Badge>
                 )}
               </Button>
             </Link>
