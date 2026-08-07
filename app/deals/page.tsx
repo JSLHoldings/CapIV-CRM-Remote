@@ -32,7 +32,7 @@ import {
   dealTypeLabel, dealTypeShort, sourceChannelLabel, dataClassificationLabel,
   transactionPurposeLabel, dealStageLabel, requestTypeLabel, partyRoleLabel,
   lifecycleLabel, lifecycleBadge, classificationBadge,
-  generateReferenceCode, evaluateCompletion, GATES, TAXONOMY_VERSION,
+  generateReferenceCode, evaluateCompletion, TAXONOMY_VERSION,
   type LifecycleState,
 } from "@/lib/deal-schema"
 
