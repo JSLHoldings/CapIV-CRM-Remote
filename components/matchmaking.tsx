@@ -8,53 +8,23 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Users, TrendingUp, Target, MapPin, Search, ArrowRight, CheckCircle2, AlertCircle, Loader2, RefreshCw, Shield } from "lucide-react"
+import {
+  Users, TrendingUp, Target, MapPin, Search, ArrowRight, ArrowLeftRight, CheckCircle2,
+  AlertCircle, Loader2, RefreshCw, Shield, ShieldCheck, ShieldAlert, FileText, Gauge,
+} from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
-
-// ── Matching engine ────────────────────────────────────────────────────────────
-// Implements the CapIV OS matching score: geographic focus, asset alignment,
-// check size range, risk profile, behavioral continuity score, hold period match.
-
-function computeMatchScore(deal: {
-  dealType: string; location: string; dealSize: string; investorType: string
-}): { score: number; reasons: string[] } {
-  const reasons: string[] = []
-  let score = 50 // base
-
-  // Geographic alignment
-  if (deal.location.includes("CA") || deal.location.includes("TX") || deal.location.includes("FL")) {
-    score += 12; reasons.push(`Geographic focus: ${deal.location.split(",")[1]?.trim() ?? deal.location} demand corridor`)
-  } else {
-    score += 6; reasons.push(`Geographic market: ${deal.location} within coverage area`)
-  }
-
-  // Asset type alignment
-  const highDemand = ["Industrial","Multifamily","Student Housing"]
-  if (highDemand.includes(deal.dealType)) {
-    score += 14; reasons.push(`Asset type '${deal.dealType}' is high-priority in current mandate`)
-  } else {
-    score += 8; reasons.push(`Asset type '${deal.dealType}' within portfolio allocation`)
-  }
-
-  // Check size
-  const sizeNum = parseFloat(deal.dealSize.replace(/[$M,B]/gi, "")) || 0
-  if (sizeNum >= 40 && sizeNum <= 130) {
-    score += 10; reasons.push(`Check size ${deal.dealSize} within mandate range`)
-  } else {
-    score += 4; reasons.push(`Check size ${deal.dealSize} at mandate threshold — conditional`)
-  }
-
-  // Behavioral continuity (investor type alignment)
-  if (deal.investorType.includes("Family Office") || deal.investorType.includes("Institutional")) {
-    score += 8; reasons.push("Behavioral integrity alignment confirmed via CapIV IQ")
-  } else {
-    score += 4; reasons.push("Continuity forecast within acceptable range")
-  }
-
-  return { score: Math.min(100, score), reasons }
-}
+import {
+  type Band, type Track, type CandidateState, type Direction, type DirectionResult,
+  type TriVector, type RecommendedAction, type DecisionPacket, type EvaluationInput,
+  BAND_LABEL, BAND_BADGE, BAND_ORDER, TRACK_LABEL, normalizeLegacyTrack,
+  DIRECTION_LABEL, REASON_CODES, reasonFamilyOf, reasonDescription,
+  REASON_FAMILY_LABEL, REASON_FAMILY_BADGE, type ReasonFamily,
+  CANDIDATE_STATE_LABEL, CANDIDATE_STATE_BADGE, CANDIDATE_TRANSITIONS, canTransition,
+  RECOMMENDED_ACTION_LABEL, evaluateReference, buildDecisionPacket,
+  MATCHING_LOGIC_VERSION,
+} from "@/lib/matching-logic"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -68,12 +38,73 @@ interface Match {
   dealSize: string
   investorName: string
   investorType: string
-  matchScore: number
-  status: "Pending" | "Accepted" | "Reviewing" | "Declined"
-  matchReasons: string[]
-  intelligenceBasis: Record<string, unknown>
+  track: Track
+  triVector: TriVector
+  directions: DirectionResult[]
+  reciprocalPass: boolean
+  candidateState: CandidateState
+  recommendedAction: RecommendedAction
+  reasonCodes: string[]
+  decisionPacket: DecisionPacket | null
+  evaluationId: string
   decisionLog: Array<{ action: string; at: string; by: string }>
   dateMatched: string
+}
+
+// Friendly labels for state-transition action buttons.
+const TRANSITION_LABEL: Record<CandidateState, string> = {
+  RETRIEVED: "Reset to Retrieved",
+  PRELIMINARY: "Move to Preliminary",
+  REVIEW_REQUIRED: "Send to Review",
+  QUALIFIED: "Qualify",
+  INTRO_REQUESTED: "Request Introduction",
+  INTRO_AUTHORIZED: "Authorize Introduction",
+  INTRODUCED: "Mark Introduced",
+  CLOSED: "Close Pair",
+  HOLD: "Hold",
+  BLOCK: "Block",
+  DECLINED: "Decline",
+  INACTIVE: "Mark Inactive",
+  EXPIRED: "Mark Expired",
+}
+
+// Positive / primary transitions get the accent treatment.
+const POSITIVE_TRANSITIONS: CandidateState[] = [
+  "QUALIFIED", "INTRO_REQUESTED", "INTRO_AUTHORIZED", "INTRODUCED", "CLOSED",
+]
+const NEGATIVE_TRANSITIONS: CandidateState[] = ["DECLINED", "BLOCK", "INACTIVE", "EXPIRED"]
+
+// Map a v1.1 candidate state back to the legacy status column so anything
+// reading `matches.status` stays coherent.
+function legacyStatusFor(state: CandidateState): string {
+  if (["INTRO_AUTHORIZED", "INTRODUCED", "CLOSED"].includes(state)) return "Accepted"
+  if (["DECLINED", "BLOCK", "EXPIRED", "INACTIVE"].includes(state)) return "Declined"
+  if (["QUALIFIED", "INTRO_REQUESTED", "REVIEW_REQUIRED", "HOLD"].includes(state)) return "Reviewing"
+  return "Pending"
+}
+
+// Build the presentation-safe evaluation input from a candidate row.
+function toEvaluationInput(c: {
+  deal_name: string; deal_type: string; location: string; deal_size: string
+  investor_name: string; investor_type: string
+}): { input: EvaluationInput; track: Track } {
+  const track = normalizeLegacyTrack(/debt|credit/i.test(c.investor_type) ? "CREDIT" : "EQUITY")
+  const input: EvaluationInput = {
+    opportunityName: c.deal_name,
+    track,
+    assetClass: c.deal_type,
+    geography: c.location,
+    capitalNeed: c.deal_size,
+    transactionPurpose: "acquisition",
+    targetIrr: track === "EQ_EQUITY_TRACK" ? "16%" : undefined,
+    holdOrTerm: track === "EQ_CREDIT_TRACK" ? "5yr" : "5-7yr",
+    providerName: c.investor_name,
+    providerType: c.investor_type,
+    evidenceCompleteness: 0.7,
+    recordFreshDays: 20,
+    dealStageComplete: true,
+  }
+  return { input, track }
 }
 
 export function Matchmaking() {
@@ -84,28 +115,99 @@ export function Matchmaking() {
   const [filteredMatches, setFilteredMatches] = useState<Match[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null)
-  const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [filterState, setFilterState] = useState<string>("all")
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
   // ── Map DB row to local type ──
-  const dbRowToMatch = useCallback((row: Record<string, unknown>): Match => ({
-    id: row.id as string,
-    user_id: row.user_id as string,
-    deal_id: row.deal_id as string | undefined,
-    dealName: row.deal_name as string,
-    dealType: (row.deal_type as string) ?? "—",
-    location: (row.location as string) ?? "—",
-    dealSize: (row.deal_size as string) ?? "—",
-    investorName: row.investor_name as string,
-    investorType: (row.investor_type as string) ?? "—",
-    matchScore: row.match_score as number,
-    status: row.status as Match["status"],
-    matchReasons: (row.match_reasons as string[]) ?? [],
-    intelligenceBasis: (row.intelligence_basis as Record<string, unknown>) ?? {},
-    decisionLog: (row.decision_log as Match["decisionLog"]) ?? [],
-    dateMatched: (row.date_matched as string).split("T")[0],
-  }), [])
+  const dbRowToMatch = useCallback((row: Record<string, unknown>): Match => {
+    const directions = [
+      row.direction_a_to_b as DirectionResult | null,
+      row.direction_b_to_a as DirectionResult | null,
+    ].filter(Boolean) as DirectionResult[]
+    return {
+      id: row.id as string,
+      user_id: row.user_id as string,
+      deal_id: row.deal_id as string | undefined,
+      dealName: row.deal_name as string,
+      dealType: (row.deal_type as string) ?? "—",
+      location: (row.location as string) ?? "—",
+      dealSize: (row.deal_size as string) ?? "—",
+      investorName: row.investor_name as string,
+      investorType: (row.investor_type as string) ?? "—",
+      track: normalizeLegacyTrack(row.track as string),
+      triVector: {
+        matchFit: (row.match_fit_band as Band) ?? "INSUFFICIENT",
+        informationConfidence: (row.info_confidence_band as Band) ?? "INSUFFICIENT",
+        executionReadiness: (row.exec_readiness_band as Band) ?? "INSUFFICIENT",
+      },
+      directions,
+      reciprocalPass: Boolean(row.reciprocity_ok),
+      candidateState: (row.candidate_state as CandidateState) ?? "RETRIEVED",
+      recommendedAction:
+        (row.decision_packet as DecisionPacket | null)?.recommendation ?? "REVIEW",
+      reasonCodes: (row.reason_codes as string[]) ?? [],
+      decisionPacket: (row.decision_packet as DecisionPacket | null) ?? null,
+      evaluationId: (row.evaluation_id as string) ?? "",
+      decisionLog: (row.decision_log as Match["decisionLog"]) ?? [],
+      dateMatched: (row.date_matched as string)?.split("T")[0] ?? "",
+    }
+  }, [])
+
+  // Build an insert row from a candidate, running the v1.1 reference engine.
+  const buildMatchRow = useCallback(
+    (
+      userId: string,
+      c: { deal_name: string; deal_type: string; location: string; deal_size: string; investor_name: string; investor_type: string },
+    ) => {
+      const { input, track } = toEvaluationInput(c)
+      const evaluationId = `EV-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const result = evaluateReference(input, evaluationId)
+      const snapshotId = evaluationId
+      const packet = buildDecisionPacket({
+        opportunityName: c.deal_name,
+        providerName: c.investor_name,
+        track,
+        snapshotId,
+        result,
+      })
+      const [aToB, bToA] = result.directions
+      return {
+        user_id: userId,
+        deal_name: c.deal_name,
+        deal_type: c.deal_type,
+        location: c.location,
+        deal_size: c.deal_size,
+        investor_name: c.investor_name,
+        investor_type: c.investor_type,
+        // legacy columns kept in sync
+        match_score: null,
+        status: legacyStatusFor(result.candidateState),
+        match_reasons: result.reasonCodes.map((code) => reasonDescription(code)),
+        intelligence_basis: {
+          engine: `CapIV Matching Logic ${MATCHING_LOGIC_VERSION}`,
+          scored_at: result.scoredAt,
+          policy_version: result.policyVersion,
+          private_core_version: result.privateCoreVersion,
+        },
+        decision_log: [{ action: "Evaluated", at: result.scoredAt, by: `CapIV Matching ${MATCHING_LOGIC_VERSION}` }],
+        // v1.1 columns
+        track,
+        match_fit_band: result.triVector.matchFit,
+        info_confidence_band: result.triVector.informationConfidence,
+        exec_readiness_band: result.triVector.executionReadiness,
+        direction_a_to_b: aToB,
+        direction_b_to_a: bToA,
+        reciprocity_ok: result.reciprocalPass,
+        candidate_state: result.candidateState,
+        reason_codes: result.reasonCodes,
+        decision_packet: packet,
+        evaluation_id: evaluationId,
+        logic_version: MATCHING_LOGIC_VERSION,
+      }
+    },
+    [],
+  )
 
   // ── Load matches from DB ──
   const loadMatches = useCallback(async () => {
@@ -134,19 +236,10 @@ export function Matchmaking() {
       { deal_name: "Luxury Multifamily Complex", deal_type: "Multifamily", location: "Austin, TX", deal_size: "$85M", investor_name: "Metropolitan Investment Group", investor_type: "Investor / Family Office" },
       { deal_name: "Student Housing Development", deal_type: "Student Housing", location: "Chapel Hill, NC", deal_size: "$52M", investor_name: "Education Realty Partners", investor_type: "Asset Holder / Developer" },
     ]
-    const rows = samples.map((s) => {
-      const { score, reasons } = computeMatchScore({ dealType: s.deal_type, location: s.location, dealSize: s.deal_size, investorType: s.investor_type })
-      return {
-        user_id: userId, deal_name: s.deal_name, deal_type: s.deal_type,
-        location: s.location, deal_size: s.deal_size, investor_name: s.investor_name,
-        investor_type: s.investor_type, match_score: score, status: "Pending",
-        match_reasons: reasons,
-        intelligence_basis: { engine: "CapIV OS Matching Graph v1.0", scored_at: new Date().toISOString() },
-        decision_log: [{ action: "Generated", at: new Date().toISOString(), by: "CapIV OS" }],
-      }
-    })
+    const rows = samples.map((s) => buildMatchRow(userId, s))
     const { data, error } = await supabase.from("matches").insert(rows).select()
     if (!error && data) setMatches(data.map(dbRowToMatch))
+    else if (error) console.error("[v0] Seed error:", error.message)
   }
 
   useEffect(() => { void loadMatches() }, [loadMatches])
@@ -157,43 +250,30 @@ export function Matchmaking() {
         match.dealName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         match.investorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         match.location.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesStatus = filterStatus === "all" || match.status === filterStatus
-      return matchesSearch && matchesStatus
+      const matchesState =
+        filterState === "all" ||
+        (filterState === "qualified" && ["QUALIFIED", "INTRO_REQUESTED", "INTRO_AUTHORIZED", "INTRODUCED"].includes(match.candidateState)) ||
+        (filterState === "review" && ["PRELIMINARY", "REVIEW_REQUIRED", "RETRIEVED"].includes(match.candidateState)) ||
+        (filterState === "hold" && match.candidateState === "HOLD") ||
+        (filterState === "declined" && ["DECLINED", "BLOCK", "EXPIRED", "INACTIVE"].includes(match.candidateState))
+      return matchesSearch && matchesState
     })
-    filtered = filtered.sort((a, b) => b.matchScore - a.matchScore)
+    // Sort by reciprocal pass, then match-fit band strength.
+    filtered = filtered.sort((a, b) => {
+      if (a.reciprocalPass !== b.reciprocalPass) return a.reciprocalPass ? -1 : 1
+      return BAND_ORDER[b.triVector.matchFit] - BAND_ORDER[a.triVector.matchFit]
+    })
     setFilteredMatches(filtered)
-  }, [matches, searchTerm, filterStatus])
-
-  const getMatchScoreColor = (score: number) => {
-    if (score >= 90) return "text-emerald-300"
-    if (score >= 80) return "text-blue-200"
-    if (score >= 70) return "text-amber-300"
-    return "text-slate-400"
-  }
-
-  const getStatusColor = (status: Match["status"]) => {
-    switch (status) {
-      case "Accepted":
-        return "border border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-      case "Reviewing":
-        return "border border-blue-500/40 bg-blue-500/10 text-blue-200"
-      case "Pending":
-        return "border border-amber-500/40 bg-amber-500/10 text-amber-200"
-      case "Declined":
-        return "border border-rose-500/40 bg-rose-500/10 text-rose-200"
-      default:
-        return "border border-slate-700 bg-slate-800 text-slate-300"
-    }
-  }
+  }, [matches, searchTerm, filterState])
 
   const stats = {
     totalMatches: matches.length,
-    highQuality: matches.filter((m) => m.matchScore >= 80).length,
-    pending: matches.filter((m) => m.status === "Pending").length,
-    accepted: matches.filter((m) => m.status === "Accepted").length,
+    qualified: matches.filter((m) => ["QUALIFIED", "INTRO_REQUESTED", "INTRO_AUTHORIZED", "INTRODUCED"].includes(m.candidateState)).length,
+    review: matches.filter((m) => ["PRELIMINARY", "REVIEW_REQUIRED", "RETRIEVED"].includes(m.candidateState)).length,
+    hold: matches.filter((m) => m.candidateState === "HOLD").length,
   }
 
-  // ── Run a new match through the scoring engine and persist ──
+  // ── Run a new match through the v1.1 engine and persist ──
   const handleRunNewMatch = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { toast({ title: "Not signed in", description: "Please sign in to run matches." }); return }
@@ -201,34 +281,37 @@ export function Matchmaking() {
     const dealCandidates = [
       { deal_name: "Riverfront Office Reposition", deal_type: "Office", location: "Nashville, TN", deal_size: "$58M", investor_name: "Signal Ridge Capital", investor_type: "Capital Partner (Equity)" },
       { deal_name: "Sun Belt Multifamily Portfolio", deal_type: "Multifamily", location: "Atlanta, GA", deal_size: "$95M", investor_name: "Ascend Capital Group", investor_type: "Investor / Family Office" },
-      { deal_name: "Cold Storage Logistics Hub", deal_type: "Industrial", location: "Dallas, TX", deal_size: "$72M", investor_name: "Meridian Industrial Fund", investor_type: "Capital Partner (Equity)" },
+      { deal_name: "Cold Storage Logistics Hub", deal_type: "Industrial", location: "Dallas, TX", deal_size: "$72M", investor_name: "Meridian Industrial Fund", investor_type: "Capital Partner (Debt)" },
     ]
     const candidate = dealCandidates[matches.length % dealCandidates.length]
-    const { score, reasons } = computeMatchScore({ dealType: candidate.deal_type, location: candidate.location, dealSize: candidate.deal_size, investorType: candidate.investor_type })
+    const row = buildMatchRow(user.id, candidate)
 
-    const { data, error } = await supabase.from("matches").insert({
-      user_id: user.id, deal_name: candidate.deal_name, deal_type: candidate.deal_type,
-      location: candidate.location, deal_size: candidate.deal_size,
-      investor_name: candidate.investor_name, investor_type: candidate.investor_type,
-      match_score: score, status: "Pending", match_reasons: reasons,
-      intelligence_basis: { engine: "CapIV OS Matching Graph v1.0", scored_at: new Date().toISOString(), scoring_factors: ["geographic_demand", "asset_alignment", "check_size", "behavioral_continuity"] },
-      decision_log: [{ action: "Generated", at: new Date().toISOString(), by: "CapIV OS Matching Engine" }],
-    }).select().single()
-
-    if (error) { console.error("[v0] Run match error:", error.message); return }
+    const { data, error } = await supabase.from("matches").insert(row).select().single()
+    if (error) { console.error("[v0] Run match error:", error.message); toast({ title: "Error", description: "Failed to run match." }); return }
     if (data) {
       const newMatch = dbRowToMatch(data as Record<string, unknown>)
       setMatches((prev) => [newMatch, ...prev])
-      setFilterStatus("all")
-      void logActivity({ action: "Ran new match", category: "deals", metadata: { deal: candidate.deal_name, investor: candidate.investor_name, score } })
-      toast({ title: "New match generated", description: `${candidate.investor_name} matched to ${candidate.deal_name} (Score: ${score}%).` })
+      setFilterState("all")
+      void logActivity({
+        action: "Ran new match",
+        category: "deals",
+        metadata: { deal: candidate.deal_name, investor: candidate.investor_name, state: newMatch.candidateState, reciprocalPass: newMatch.reciprocalPass },
+      })
+      toast({
+        title: "New pair evaluated",
+        description: `${candidate.investor_name} × ${candidate.deal_name} → ${CANDIDATE_STATE_LABEL[newMatch.candidateState]}.`,
+      })
     }
-  }, [matches, dbRowToMatch, toast]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [matches, dbRowToMatch, buildMatchRow, toast]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExportMatches = useCallback(() => {
-    const header = ["Deal Name", "Deal Type", "Location", "Deal Size", "Investor", "Investor Type", "Score", "Status", "Date"]
+    const header = ["Deal", "Type", "Location", "Size", "Investor", "Track", "Match Fit", "Info Confidence", "Exec Readiness", "Reciprocal", "State", "Date"]
     const rows = matches.map((m) =>
-      [m.dealName, m.dealType, m.location, m.dealSize, m.investorName, m.investorType, `${m.matchScore}%`, m.status, m.dateMatched].join(",")
+      [
+        m.dealName, m.dealType, m.location, m.dealSize, m.investorName, TRACK_LABEL[m.track],
+        BAND_LABEL[m.triVector.matchFit], BAND_LABEL[m.triVector.informationConfidence], BAND_LABEL[m.triVector.executionReadiness],
+        m.reciprocalPass ? "PASS" : "FAIL", CANDIDATE_STATE_LABEL[m.candidateState], m.dateMatched,
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","),
     )
     const csv = [header.join(","), ...rows].join("\n")
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
@@ -243,64 +326,77 @@ export function Matchmaking() {
     toast({ title: "Matches exported", description: "CSV export downloaded." })
   }, [matches, toast])
 
-  // ── Persist match decision + decision log to Supabase ──
-  const handleMatchDecision = useCallback(async (matchId: string, status: Match["status"]) => {
+  // ── Persist a governed state transition (§3.17 transition enforcement) ──
+  const handleTransition = useCallback(async (matchId: string, target: CandidateState) => {
+    const match = matches.find((m) => m.id === matchId)
+    if (!match) return
+    if (!canTransition(match.candidateState, target)) {
+      toast({ title: "Transition blocked", description: `Cannot move from ${CANDIDATE_STATE_LABEL[match.candidateState]} to ${CANDIDATE_STATE_LABEL[target]}.` })
+      return
+    }
     setIsSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const match = matches.find((m) => m.id === matchId)
-    if (!match) { setIsSaving(false); return }
-
-    const logEntry = { action: status === "Accepted" ? "Approved" : "Declined", at: new Date().toISOString(), by: user?.email ?? "Reviewer" }
+    const logEntry = { action: `${CANDIDATE_STATE_LABEL[match.candidateState]} → ${CANDIDATE_STATE_LABEL[target]}`, at: new Date().toISOString(), by: user?.email ?? "Reviewer" }
     const newLog = [...match.decisionLog, logEntry]
 
     const { error } = await supabase.from("matches")
-      .update({ status, decision_log: newLog, updated_at: new Date().toISOString() })
+      .update({ candidate_state: target, status: legacyStatusFor(target), decision_log: newLog, updated_at: new Date().toISOString() })
       .eq("id", matchId)
 
     if (error) {
-      console.error("[v0] Match decision error:", error.message)
+      console.error("[v0] Transition error:", error.message)
       toast({ title: "Error", description: "Failed to save decision." })
       setIsSaving(false)
       return
     }
 
-    setMatches((prev) => prev.map((m) => m.id === matchId ? { ...m, status, decisionLog: newLog } : m))
-    setSelectedMatch((prev) => prev && prev.id === matchId ? { ...prev, status, decisionLog: newLog } : prev)
+    setMatches((prev) => prev.map((m) => m.id === matchId ? { ...m, candidateState: target, decisionLog: newLog } : m))
+    setSelectedMatch((prev) => prev && prev.id === matchId ? { ...prev, candidateState: target, decisionLog: newLog } : prev)
 
-    void logActivity({ action: `Match ${status}`, category: "deals", metadata: { deal: match.dealName, investor: match.investorName, score: match.matchScore } })
-
-    toast({
-      title: status === "Accepted" ? "Match approved" : "Match declined",
-      description: status === "Accepted"
-        ? "Connection authorized and queued for outreach."
-        : "Match removed from active routing.",
+    void logActivity({
+      action: `Match → ${CANDIDATE_STATE_LABEL[target]}`,
+      category: "deals",
+      metadata: { deal: match.dealName, investor: match.investorName, from: match.candidateState, to: target },
     })
+
+    toast({ title: "Decision recorded", description: `Pair moved to ${CANDIDATE_STATE_LABEL[target]}.` })
     setIsSaving(false)
-    if (status === "Accepted") router.push("/deals")
+    if (target === "INTRODUCED") router.push("/deals")
   }, [matches, router, toast]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Group reason codes by family for display.
+  const groupReasons = (codes: string[]): Record<ReasonFamily, string[]> => {
+    const out = {} as Record<ReasonFamily, string[]>
+    for (const code of codes) {
+      const fam = reasonFamilyOf(code)
+      if (!out[fam]) out[fam] = []
+      out[fam].push(code)
+    }
+    return out
+  }
 
   return (
     <div className="space-y-6 text-slate-100">
       <div className="rounded-3xl border border-purple-500/20 bg-gradient-to-r from-purple-600/20 via-slate-900 to-slate-950 p-6 shadow-inner shadow-purple-500/10 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-purple-200/80 mb-2">Matchmaking Graph</p>
-            <h1 className="text-2xl font-semibold text-white">Investor &amp; Deal Matching</h1>
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-xs uppercase tracking-[0.35em] text-purple-200/80">Matching Intelligence</p>
+              <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">{MATCHING_LOGIC_VERSION}</Badge>
+            </div>
+            <h1 className="text-2xl font-semibold text-white">Reciprocal Capital Matching</h1>
             <p className="text-slate-300 mt-2 max-w-3xl">
-              AI-powered precision matching between capital profiles and live mandates, unified with CapIV IQ diligence.
+              Each pair is evaluated in both directions and scored on three independent dimensions —
+              Match Fit, Information Confidence, and Execution Readiness — governed by CapIV EQ.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Button className="bg-blue-600 hover:bg-blue-500 text-white" onClick={handleRunNewMatch} disabled={isSaving}>
               <Target className="h-4 w-4 mr-2" />
-              Run New Match
+              Evaluate New Pair
             </Button>
-            <Button
-              variant="outline"
-              className="border-slate-500/60 text-slate-200 hover:border-blue-400"
-              onClick={handleExportMatches}
-            >
-              Export Matches
+            <Button variant="outline" className="border-slate-500/60 text-slate-200 hover:border-blue-400" onClick={handleExportMatches}>
+              Export
             </Button>
             <Button variant="outline" className="border-slate-600 text-slate-300" onClick={loadMatches} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
@@ -310,99 +406,41 @@ export function Matchmaking() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-slate-900/80 border border-slate-800">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">Total Matches</p>
-                <p className="text-2xl font-bold text-white mt-1">{stats.totalMatches}</p>
-              </div>
-              <Users className="h-8 w-8 text-blue-300" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-900/80 border border-slate-800">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">High Quality (≥80)</p>
-                <p className="text-2xl font-bold text-emerald-300 mt-1">{stats.highQuality}</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-emerald-300" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-900/80 border border-slate-800">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">Pending Review</p>
-                <p className="text-2xl font-bold text-amber-300 mt-1">{stats.pending}</p>
-              </div>
-              <AlertCircle className="h-8 w-8 text-amber-300" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-900/80 border border-slate-800">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">Accepted</p>
-                <p className="text-2xl font-bold text-emerald-300 mt-1">{stats.accepted}</p>
-              </div>
-              <CheckCircle2 className="h-8 w-8 text-emerald-300" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Evaluated Pairs" value={stats.totalMatches} icon={<Users className="h-8 w-8 text-blue-300" />} valueClass="text-white" />
+        <StatCard label="Qualified" value={stats.qualified} icon={<CheckCircle2 className="h-8 w-8 text-emerald-300" />} valueClass="text-emerald-300" />
+        <StatCard label="Needs Review" value={stats.review} icon={<AlertCircle className="h-8 w-8 text-amber-300" />} valueClass="text-amber-300" />
+        <StatCard label="On Hold" value={stats.hold} icon={<Shield className="h-8 w-8 text-orange-300" />} valueClass="text-orange-300" />
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 w-4 h-4" />
           <Input
-            placeholder="Search matches by deal, investor, or location..."
+            placeholder="Search by deal, investor, or location..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 bg-slate-900/80 border border-slate-800 text-white placeholder:text-slate-500"
           />
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            className={`rounded-xl border ${filterStatus === "all" ? "bg-blue-600 text-white border-blue-500" : "border-slate-600 text-slate-300"}`}
-            size="sm"
-            onClick={() => setFilterStatus("all")}
-          >
-            All
-          </Button>
-          <Button
-            variant="ghost"
-            className={`rounded-xl border ${filterStatus === "Pending" ? "bg-blue-600 text-white border-blue-500" : "border-slate-600 text-slate-300"}`}
-            size="sm"
-            onClick={() => setFilterStatus("Pending")}
-          >
-            Pending
-          </Button>
-          <Button
-            variant="ghost"
-            className={`rounded-xl border ${filterStatus === "Reviewing" ? "bg-blue-600 text-white border-blue-500" : "border-slate-600 text-slate-300"}`}
-            size="sm"
-            onClick={() => setFilterStatus("Reviewing")}
-          >
-            Reviewing
-          </Button>
-          <Button
-            variant="ghost"
-            className={`rounded-xl border ${filterStatus === "Accepted" ? "bg-blue-600 text-white border-blue-500" : "border-slate-600 text-slate-300"}`}
-            size="sm"
-            onClick={() => setFilterStatus("Accepted")}
-          >
-            Accepted
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: "all", label: "All" },
+            { id: "qualified", label: "Qualified" },
+            { id: "review", label: "Review" },
+            { id: "hold", label: "Hold" },
+            { id: "declined", label: "Declined" },
+          ].map((f) => (
+            <Button
+              key={f.id}
+              variant="ghost"
+              size="sm"
+              className={`rounded-xl border ${filterState === f.id ? "bg-blue-600 text-white border-blue-500" : "border-slate-600 text-slate-300"}`}
+              onClick={() => setFilterState(f.id)}
+            >
+              {f.label}
+            </Button>
+          ))}
         </div>
       </div>
 
@@ -412,6 +450,11 @@ export function Matchmaking() {
           <span className="ml-3 text-slate-400">Loading matches...</span>
         </div>
       )}
+
+      {!isLoading && filteredMatches.length === 0 && (
+        <div className="text-center py-16 text-slate-400">No matches found for the current filter.</div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {!isLoading && filteredMatches.map((match) => (
           <Card
@@ -420,163 +463,235 @@ export function Matchmaking() {
             onClick={() => setSelectedMatch(match)}
           >
             <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <CardTitle className="text-lg font-semibold text-white mb-2">{match.dealName}</CardTitle>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <CardTitle className="text-lg font-semibold text-white mb-2 truncate">{match.dealName}</CardTitle>
                   <div className="flex items-center gap-2 text-sm text-slate-400">
                     <MapPin className="h-4 w-4" />
-                    <span>{match.location}</span>
+                    <span className="truncate">{match.location}</span>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-2">
-                  <Badge className={getStatusColor(match.status)}>{match.status}</Badge>
-                  <div className={`text-2xl font-bold ${getMatchScoreColor(match.matchScore)}`}>
-                    {match.matchScore}%
-                  </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <Badge className={CANDIDATE_STATE_BADGE[match.candidateState]}>{CANDIDATE_STATE_LABEL[match.candidateState]}</Badge>
+                  <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px]">{TRACK_LABEL[match.track]}</Badge>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div>
-                  <p className="text-xs text-slate-400">Deal Type</p>
-                  <p className="text-sm font-medium text-white">{match.dealType}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-400">Deal Size</p>
-                  <p className="text-sm font-medium text-white">{match.dealSize}</p>
-                </div>
+              {/* Tri-vector */}
+              <div className="grid grid-cols-3 gap-2">
+                <TriCell label="Match Fit" band={match.triVector.matchFit} />
+                <TriCell label="Info Conf." band={match.triVector.informationConfidence} />
+                <TriCell label="Exec Ready" band={match.triVector.executionReadiness} />
               </div>
 
-              <div>
-                <p className="text-xs text-slate-400 mb-2">Matched Investor</p>
+              {/* Reciprocity */}
+              <div className="flex items-center gap-2 text-xs">
+                <ArrowLeftRight className="h-3.5 w-3.5 text-slate-400" />
+                {match.reciprocalPass ? (
+                  <span className="text-emerald-300 flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Reciprocal gate passed (both directions)</span>
+                ) : (
+                  <span className="text-amber-300 flex items-center gap-1"><ShieldAlert className="h-3.5 w-3.5" /> Reciprocity not satisfied</span>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-slate-800">
+                <p className="text-xs text-slate-400 mb-2">Capital Provider</p>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{match.investorName}</p>
-                    <p className="text-xs text-slate-400">{match.investorType}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{match.investorName}</p>
+                    <p className="text-xs text-slate-400 truncate">{match.investorType}</p>
                   </div>
-                  <ArrowRight className="h-4 w-4 text-blue-300" />
+                  <ArrowRight className="h-4 w-4 text-blue-300 shrink-0" />
                 </div>
               </div>
 
-              <div>
-                <p className="text-xs text-slate-400 mb-2">Match Reasons</p>
-                <div className="space-y-1">
-                  {match.matchReasons.slice(0, 2).map((reason, idx) => (
-                    <div key={idx} className="flex items-start gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-emerald-300 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-slate-200">{reason}</p>
-                    </div>
+              {match.reasonCodes.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {match.reasonCodes.slice(0, 3).map((code) => (
+                    <Badge key={code} className={`${REASON_FAMILY_BADGE[reasonFamilyOf(code)]} text-[10px]`}>{code}</Badge>
                   ))}
-                  {match.matchReasons.length > 2 && (
-                    <p className="text-xs text-slate-400">+{match.matchReasons.length - 2} more reasons</p>
+                  {match.reasonCodes.length > 3 && (
+                    <span className="text-[10px] text-slate-400 self-center">+{match.reasonCodes.length - 3}</span>
                   )}
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         ))}
       </div>
 
       <Dialog open={!!selectedMatch} onOpenChange={() => setSelectedMatch(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto bg-slate-950 border border-slate-800 text-slate-100">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto bg-slate-950 border border-slate-800 text-slate-100">
           <DialogHeader>
-            <DialogTitle className="text-white">Match Details</DialogTitle>
+            <DialogTitle className="text-white flex items-center gap-2">
+              Decision Packet
+              <Badge className="bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-mono">{MATCHING_LOGIC_VERSION}</Badge>
+            </DialogTitle>
           </DialogHeader>
           {selectedMatch && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between p-4 rounded-2xl border border-slate-800 bg-slate-900/80">
+              {/* Header summary */}
+              <div className="flex items-center justify-between p-4 rounded-2xl border border-slate-800 bg-slate-900/80 gap-4">
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-white truncate">{selectedMatch.dealName}</h3>
+                  <p className="text-sm text-slate-400 truncate">{selectedMatch.investorName} · {selectedMatch.location}</p>
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <Badge className={CANDIDATE_STATE_BADGE[selectedMatch.candidateState]}>{CANDIDATE_STATE_LABEL[selectedMatch.candidateState]}</Badge>
+                  <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px]">{TRACK_LABEL[selectedMatch.track]}</Badge>
+                </div>
+              </div>
+
+              {/* Tri-vector */}
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2 flex items-center gap-2"><Gauge className="h-3.5 w-3.5" /> Tri-Vector Assessment</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <TriCell label="Match Fit" band={selectedMatch.triVector.matchFit} large />
+                  <TriCell label="Information Confidence" band={selectedMatch.triVector.informationConfidence} large />
+                  <TriCell label="Execution Readiness" band={selectedMatch.triVector.executionReadiness} large />
+                </div>
+              </div>
+
+              {/* Reciprocal directions */}
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2 flex items-center gap-2"><ArrowLeftRight className="h-3.5 w-3.5" /> Reciprocal Evaluation</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {selectedMatch.directions.map((d) => (
+                    <div key={d.direction} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400">{DIRECTION_LABEL[d.direction]}</span>
+                        {d.passedGate
+                          ? <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                          : <AlertCircle className="h-4 w-4 text-amber-300" />}
+                      </div>
+                      <Badge className={BAND_BADGE[d.band]}>{BAND_LABEL[d.band]}</Badge>
+                      <p className={`text-xs ${d.passedGate ? "text-emerald-300" : "text-amber-300"}`}>
+                        {d.passedGate ? "Directional gate passed" : "Directional gate not passed"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className={`mt-2 text-xs flex items-center gap-1.5 ${selectedMatch.reciprocalPass ? "text-emerald-300" : "text-amber-300"}`}>
+                  {selectedMatch.reciprocalPass ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
+                  Reciprocity invariant: {selectedMatch.reciprocalPass ? "satisfied — both directions pass" : "not satisfied — a strong side cannot compensate for a weak side"}
+                </div>
+              </div>
+
+              {/* Recommendation */}
+              <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-blue-200/80 mb-1">EQ Recommended Action</p>
+                <p className="text-sm font-medium text-white">{RECOMMENDED_ACTION_LABEL[selectedMatch.recommendedAction]}</p>
+              </div>
+
+              {/* Reason codes grouped by family */}
+              {selectedMatch.reasonCodes.length > 0 && (
                 <div>
-                  <h3 className="font-semibold text-white">{selectedMatch.dealName}</h3>
-                  <p className="text-sm text-slate-400">{selectedMatch.location}</p>
-                </div>
-                <div className="text-right">
-                  <div className={`text-3xl font-bold ${getMatchScoreColor(selectedMatch.matchScore)}`}>
-                    {selectedMatch.matchScore}%
-                  </div>
-                  <p className="text-xs text-slate-500">Match Score</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Card className="bg-slate-900/80 border border-slate-800">
-                  <CardHeader>
-                    <CardTitle className="text-base text-white">Deal Information</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div>
-                      <Label className="text-xs text-slate-400">Deal Type</Label>
-                      <p className="text-sm font-medium text-white">{selectedMatch.dealType}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-slate-400">Location</Label>
-                      <p className="text-sm font-medium text-white">{selectedMatch.location}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-slate-400">Deal Size</Label>
-                      <p className="text-sm font-medium text-white">{selectedMatch.dealSize}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-slate-900/80 border border-slate-800">
-                  <CardHeader>
-                    <CardTitle className="text-base text-white">Investor Information</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div>
-                      <Label className="text-xs text-slate-400">Investor Name</Label>
-                      <p className="text-sm font-medium text-white">{selectedMatch.investorName}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-slate-400">Investor Type</Label>
-                      <p className="text-sm font-medium text-white">{selectedMatch.investorType}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-slate-400">Status</Label>
-                      <Badge className={getStatusColor(selectedMatch.status)}>{selectedMatch.status}</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card className="bg-slate-900/80 border border-slate-800">
-                <CardHeader>
-                  <CardTitle className="text-base text-white">Match Analysis</CardTitle>
-                </CardHeader>
-                <CardContent>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2">Reason Codes</p>
                   <div className="space-y-2">
-                    {selectedMatch.matchReasons.map((reason, idx) => (
-                      <div key={idx} className="flex items-start gap-3 p-2 rounded border border-slate-800 bg-slate-900/60">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-300 mt-0.5 flex-shrink-0" />
-                        <p className="text-sm text-slate-200">{reason}</p>
+                    {Object.entries(groupReasons(selectedMatch.reasonCodes)).map(([fam, codes]) => (
+                      <div key={fam} className="flex items-start gap-2">
+                        <Badge className={`${REASON_FAMILY_BADGE[fam as ReasonFamily]} text-[10px] shrink-0`}>{REASON_FAMILY_LABEL[fam as ReasonFamily]}</Badge>
+                        <div className="space-y-1">
+                          {codes.map((code) => (
+                            <p key={code} className="text-xs text-slate-300"><span className="font-mono text-slate-400">{code}</span> — {reasonDescription(code)}</p>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              )}
 
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  className="border-rose-500/30 text-rose-300"
-                  disabled={isSaving}
-                  onClick={() => handleMatchDecision(selectedMatch.id, "Declined")}
-                >
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decline Match"}
-                </Button>
-                <Button
-                  className="bg-blue-600 hover:bg-blue-500 text-white"
-                  disabled={isSaving}
-                  onClick={() => handleMatchDecision(selectedMatch.id, "Accepted")}
-                >
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Approve & Connect"}
-                </Button>
+              {/* Limitations */}
+              {selectedMatch.decisionPacket?.limitations?.length ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2 flex items-center gap-2"><FileText className="h-3.5 w-3.5" /> Limitations</p>
+                  <ul className="space-y-1">
+                    {selectedMatch.decisionPacket.limitations.map((l, i) => (
+                      <li key={i} className="text-xs text-slate-400">• {l}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {/* Decision log */}
+              {selectedMatch.decisionLog.length > 0 && (
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2">Decision Log</p>
+                  <div className="space-y-1.5">
+                    {selectedMatch.decisionLog.map((entry, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs border border-slate-800 rounded px-3 py-1.5 bg-slate-900/60">
+                        <span className="text-slate-200">{entry.action}</span>
+                        <span className="text-slate-500">{entry.by} · {new Date(entry.at).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Governed state transition actions */}
+              <div className="border-t border-slate-800 pt-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2">Governed Actions</p>
+                <div className="flex flex-wrap justify-end gap-2">
+                  {CANDIDATE_TRANSITIONS[selectedMatch.candidateState].length === 0 && (
+                    <p className="text-xs text-slate-500">This pair is in a terminal state; no further actions.</p>
+                  )}
+                  {CANDIDATE_TRANSITIONS[selectedMatch.candidateState].map((target) => {
+                    const negative = NEGATIVE_TRANSITIONS.includes(target)
+                    const positive = POSITIVE_TRANSITIONS.includes(target)
+                    return (
+                      <Button
+                        key={target}
+                        variant={positive ? "default" : "outline"}
+                        size="sm"
+                        disabled={isSaving}
+                        className={
+                          positive
+                            ? "bg-blue-600 hover:bg-blue-500 text-white"
+                            : negative
+                            ? "border-rose-500/30 text-rose-300 hover:bg-rose-500/10"
+                            : "border-slate-600 text-slate-200"
+                        }
+                        onClick={() => handleTransition(selectedMatch.id, target)}
+                      >
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : TRANSITION_LABEL[target]}
+                      </Button>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ── Small presentational helpers ─────────────────────────────────────────────
+
+function StatCard({ label, value, icon, valueClass }: { label: string; value: number; icon: React.ReactNode; valueClass: string }) {
+  return (
+    <Card className="bg-slate-900/80 border border-slate-800">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-slate-400">{label}</p>
+            <p className={`text-2xl font-bold mt-1 ${valueClass}`}>{value}</p>
+          </div>
+          {icon}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function TriCell({ label, band, large }: { label: string; band: Band; large?: boolean }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 text-center">
+      <p className={`text-slate-400 ${large ? "text-xs" : "text-[10px]"} mb-1.5 leading-tight`}>{label}</p>
+      <Badge className={`${BAND_BADGE[band]} ${large ? "text-xs" : "text-[10px]"}`}>{BAND_LABEL[band]}</Badge>
     </div>
   )
 }
