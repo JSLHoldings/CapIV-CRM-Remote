@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -83,11 +83,20 @@ function legacyStatusFor(state: CandidateState): string {
   return "Pending"
 }
 
-// Build the presentation-safe evaluation input from a candidate row.
-function toEvaluationInput(c: {
+// A candidate row plus optional evidence signals. When the signals are omitted
+// (e.g. a match created from the "Run new match" action) we fall back to strong
+// defaults so a well-formed record evaluates cleanly.
+interface Candidate {
   deal_name: string; deal_type: string; location: string; deal_size: string
   investor_name: string; investor_type: string
-}): { input: EvaluationInput; track: Track } {
+  evidenceCompleteness?: number
+  recordFreshDays?: number
+  dealStageComplete?: boolean
+  transactionPurpose?: string
+}
+
+// Build the presentation-safe evaluation input from a candidate row.
+function toEvaluationInput(c: Candidate): { input: EvaluationInput; track: Track } {
   const track = normalizeLegacyTrack(/debt|credit/i.test(c.investor_type) ? "CREDIT" : "EQUITY")
   const input: EvaluationInput = {
     opportunityName: c.deal_name,
@@ -95,14 +104,14 @@ function toEvaluationInput(c: {
     assetClass: c.deal_type,
     geography: c.location,
     capitalNeed: c.deal_size,
-    transactionPurpose: "acquisition",
+    transactionPurpose: c.transactionPurpose ?? "acquisition",
     targetIrr: track === "EQ_EQUITY_TRACK" ? "16%" : undefined,
     holdOrTerm: track === "EQ_CREDIT_TRACK" ? "5yr" : "5-7yr",
     providerName: c.investor_name,
     providerType: c.investor_type,
-    evidenceCompleteness: 0.7,
-    recordFreshDays: 20,
-    dealStageComplete: true,
+    evidenceCompleteness: c.evidenceCompleteness ?? 0.8,
+    recordFreshDays: c.recordFreshDays ?? 20,
+    dealStageComplete: c.dealStageComplete ?? true,
   }
   return { input, track }
 }
@@ -118,6 +127,9 @@ export function Matchmaking() {
   const [filterState, setFilterState] = useState<string>("all")
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  // Guards against the initial load/seed running twice (React strict mode
+  // double-invokes effects), which would otherwise duplicate the seed rows.
+  const didLoadRef = useRef(false)
 
   // ── Map DB row to local type ──
   const dbRowToMatch = useCallback((row: Record<string, unknown>): Match => {
@@ -156,10 +168,7 @@ export function Matchmaking() {
 
   // Build an insert row from a candidate, running the v1.1 reference engine.
   const buildMatchRow = useCallback(
-    (
-      userId: string,
-      c: { deal_name: string; deal_type: string; location: string; deal_size: string; investor_name: string; investor_type: string },
-    ) => {
+    (userId: string, c: Candidate) => {
       const { input, track } = toEvaluationInput(c)
       const evaluationId = `EV-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const result = evaluateReference(input, evaluationId)
@@ -230,19 +239,39 @@ export function Matchmaking() {
 
   // ── Seed sample matches on first load ──
   const seedSampleMatches = async (userId: string) => {
-    const samples = [
-      { deal_name: "Downtown Mixed-Use Development", deal_type: "Mixed-Use", location: "Los Angeles, CA", deal_size: "$45M", investor_name: "Pacific Growth Fund", investor_type: "Investor / Family Office" },
-      { deal_name: "Industrial Logistics Portfolio", deal_type: "Industrial", location: "Phoenix, AZ", deal_size: "$120M", investor_name: "Institutional Capital Partners", investor_type: "Capital Partner (Debt)" },
-      { deal_name: "Luxury Multifamily Complex", deal_type: "Multifamily", location: "Austin, TX", deal_size: "$85M", investor_name: "Metropolitan Investment Group", investor_type: "Investor / Family Office" },
-      { deal_name: "Student Housing Development", deal_type: "Student Housing", location: "Chapel Hill, NC", deal_size: "$52M", investor_name: "Education Realty Partners", investor_type: "Asset Holder / Developer" },
+    // The samples deliberately span the v1.1 outcome range so the tri-vector,
+    // reason-code families and candidate-state model are all exercised:
+    //  1) complete + fresh + in-mandate  -> QUALIFIED, no reason codes
+    //  2) stale + thin evidence          -> HOLD (EVID: STALE_EVIDENCE / UNSUPPORTED_ASSERTION)
+    //  3) incomplete deal + old record   -> HOLD (READY: DEAL_INCOMPLETE / TIMELINE_UNCONFIRMED)
+    //  4) out-of-range size + excluded geo -> REVIEW_REQUIRED, reciprocity fails (FIT)
+    const samples: Candidate[] = [
+      { deal_name: "Industrial Logistics Portfolio", deal_type: "Industrial", location: "Phoenix, AZ", deal_size: "$120M", investor_name: "Institutional Capital Partners", investor_type: "Capital Partner (Debt)", evidenceCompleteness: 0.9, recordFreshDays: 12, dealStageComplete: true },
+      { deal_name: "Downtown Mixed-Use Development", deal_type: "Mixed-Use", location: "Los Angeles, CA", deal_size: "$45M", investor_name: "Pacific Growth Fund", investor_type: "Investor / Family Office", evidenceCompleteness: 0.4, recordFreshDays: 210, dealStageComplete: true },
+      { deal_name: "Luxury Multifamily Complex", deal_type: "Multifamily", location: "Austin, TX", deal_size: "$85M", investor_name: "Metropolitan Investment Group", investor_type: "Investor / Family Office", evidenceCompleteness: 0.75, recordFreshDays: 120, dealStageComplete: false },
+      { deal_name: "Rural Land Assemblage", deal_type: "Land", location: "Bozeman, MT", deal_size: "$8M", investor_name: "Education Realty Partners", investor_type: "Asset Holder / Developer", evidenceCompleteness: 0.7, recordFreshDays: 30, dealStageComplete: true },
     ]
+    // Re-check right before inserting so a concurrent load cannot double-seed.
+    const { count } = await supabase
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+    if ((count ?? 0) > 0) {
+      const { data: existing } = await supabase.from("matches").select("*").eq("user_id", userId)
+      if (existing) setMatches(existing.map(dbRowToMatch))
+      return
+    }
     const rows = samples.map((s) => buildMatchRow(userId, s))
     const { data, error } = await supabase.from("matches").insert(rows).select()
     if (!error && data) setMatches(data.map(dbRowToMatch))
     else if (error) console.error("[v0] Seed error:", error.message)
   }
 
-  useEffect(() => { void loadMatches() }, [loadMatches])
+  useEffect(() => {
+    if (didLoadRef.current) return
+    didLoadRef.current = true
+    void loadMatches()
+  }, [loadMatches])
 
   useEffect(() => {
     let filtered = matches.filter((match) => {
