@@ -382,7 +382,7 @@ export function PortfolioAnalysis({ selectedMetric, onMetricSelect }: PortfolioA
           <div>
             <h1 className="text-3xl font-semibold text-white">Portfolio Analysis</h1>
             <p className="text-slate-300">
-              Welcome, {firstName}. Track your allocations, performance, and live mandates across the CapIV™ stack.
+              Welcome, {firstName}. Track your allocations, performance, and live mandates across the JSL Tech™ stack.
             </p>
           </div>
         </div>

@@ -183,9 +183,9 @@ const wrapText = (value: string, maxLength = 88) => {
 }
 
 const buildDealPdf = (deal: Deal, analysis?: DealAnalysis) => {
-  const title = sanitize(deal.name || "CapIV Opportunity")
+  const title = sanitize(deal.name || "JSL Tech Opportunity")
   const subtitleParts = [deal.referenceCode, deal.geography, deal.assetClass, lifecycleLabel(deal.lifecycleState)].filter(Boolean)
-  const subtitle = sanitize(subtitleParts.join(" • ") || "Live opportunity inside CapIV Command")
+  const subtitle = sanitize(subtitleParts.join(" • ") || "Live opportunity inside JSL Tech Command")
 
   const snapshotLines = [
     `Sponsor: ${deal.sponsor || "TBD"} (${partyRoleLabel(deal.sponsorRole)})`,
@@ -201,35 +201,35 @@ const buildDealPdf = (deal: Deal, analysis?: DealAnalysis) => {
     `Primary Market: ${deal.geography || "To be announced"}`,
     `Transaction Purpose: ${transactionPurposeLabel(deal.transactionPurpose)}`,
     `Deal Stage: ${dealStageLabel(deal.dealStage)}`,
-    `Mandate Alignment: ${analysis?.riskBand || "CapIV reviewing"}`,
+    `Mandate Alignment: ${analysis?.riskBand || "JSL Tech reviewing"}`,
     `Score: ${analysis?.score || "Awaiting full underwriting"}`,
   ]
 
   const overviewLines = wrapText(
     deal.summary ||
-      "Sponsor has not provided a full narrative yet. CapIV diligence will populate this section as documents are received.",
+      "Sponsor has not provided a full narrative yet. JSL Tech diligence will populate this section as documents are received.",
   )
 
   const aiSummaryLines = analysis?.aiSummary
     ? wrapText(analysis.aiSummary)
     : wrapText(
-        "AI signals will populate once the underwriting lab confirms comparables and updated rent rolls. Until then, leverage CapIV Access for sponsor Q&A to accelerate readiness.",
+        "AI signals will populate once the underwriting lab confirms comparables and updated rent rolls. Until then, leverage JSL Tech Access for sponsor Q&A to accelerate readiness.",
       )
 
   const diligenceActions = [
     `Underwriting Link: ${analysis?.underwritingSync || `/capiv-iq?tab=underwriting&deal=${deal.id}`}`,
     "Persona AML + NDA: Required prior to data room unlocks.",
-    "Data Room Readiness: CapIV Diligence Hub tracks NDAs, PPMS, and compliance packets unified with CapIV IQ.",
+    "Data Room Readiness: JSL Tech Diligence Hub tracks NDAs, PPMS, and compliance packets unified with JSL Tech IQ.",
   ]
 
   const capitalSignals = [
     "Capital Stack Notes: Confirm leverage assumptions and co-invest windows.",
-    "Scenario Planning: Stress-test DSCR, lease-up thresholds, and exit sensitivities inside CapIV EQ.",
+    "Scenario Planning: Stress-test DSCR, lease-up thresholds, and exit sensitivities inside JSL Tech EQ.",
     "Next Milestone: Schedule sponsor sync for updated financial model delivery.",
   ]
 
   const disclaimerLines = wrapText(
-    "Generated automatically by CapIV Command. This report is informational only and not an offer to sell securities. Contact the sponsor or CapIV team for authenticated data rooms, NDAs, and regulatory disclosures.",
+    "Generated automatically by JSL Tech Command. This report is informational only and not an offer to sell securities. Contact the sponsor or JSL Tech team for authenticated data rooms, NDAs, and regulatory disclosures.",
   )
 
   const shapes = [
@@ -302,7 +302,7 @@ ET`)
 /F1 11 Tf
 0.75 0.86 1 rg
 ${leftMargin} ${(headerTopY - 84).toFixed(2)} Td
-(${escapePdfText(`CapIV Score ${analysis?.score || "Pending"} • ${analysis?.riskBand || "Risk review in progress"}`)}) Tj
+(${escapePdfText(`JSL Tech Score ${analysis?.score || "Pending"} • ${analysis?.riskBand || "Risk review in progress"}`)}) Tj
 ET`)
   }
 
@@ -319,9 +319,9 @@ ET`)
   addHeading("Operational Snapshot", "0.3 0.33 0.6")
   addParagraph([
     `Occupancy Signal: ${analysis?.riskBand ? `${analysis.riskBand} mandate fit` : "Pending sponsor docs"}`,
-    `Underwriting Contact: ${deal.sponsor || "CapIV Sponsor Team"}`,
-    "Data Room Status: NDA pending finalization in CapIV IQ.",
-    "Comparable Set: Pulled from CapIV Access AI signals (see underwriting hub).",
+    `Underwriting Contact: ${deal.sponsor || "JSL Tech Sponsor Team"}`,
+    "Data Room Status: NDA pending finalization in JSL Tech IQ.",
+    "Comparable Set: Pulled from JSL Tech Access AI signals (see underwriting hub).",
   ])
 
   addHeading("AI Summary", "0.54 0.45 0.19")
@@ -549,7 +549,7 @@ export default function DealsPage() {
               <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70 mb-2">Deal Intelligence</p>
               <h1 className="text-4xl font-semibold text-white">Live Opportunities</h1>
               <p className="text-slate-300 mt-3 max-w-xl">
-                Monitor actionable deal flow, diligence timelines, and sponsor performance — all in the unified CapIV™
+                Monitor actionable deal flow, diligence timelines, and sponsor performance — all in the unified JSL Tech™
                 dark workspace.
               </p>
             </div>

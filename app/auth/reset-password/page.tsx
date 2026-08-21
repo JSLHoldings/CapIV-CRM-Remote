@@ -79,7 +79,7 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">CapIV™ Access</p>
+          <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">JSL Tech™ Access</p>
           <h1 className="text-3xl font-semibold text-white">Set New Password</h1>
           <p className="text-slate-400">Choose a strong password for your account.</p>
         </div>

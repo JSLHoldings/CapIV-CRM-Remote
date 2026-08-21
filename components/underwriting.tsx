@@ -17,7 +17,7 @@ import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
 
 // ── Scoring engine ─────────────────────────────────────────────────────────────
-// Implements the CapIV OS underwriting scoring model per the architecture doc:
+// Implements the JSL Tech OS underwriting scoring model per the architecture doc:
 // Experience/Track Record (25%), KYC/SOF Verification (20%),
 // Documentation Quality (15%), Financial Feasibility (20%), Compliance Risk (20%)
 
@@ -289,7 +289,7 @@ export function Underwriting() {
 
   const buildUnderwritingReport = (deal: UnderwritingDeal) => {
     const lines = [
-      "CapIV IQ Underwriting Report",
+      "JSL Tech IQ Underwriting Report",
       `Deal: ${deal.dealName}`,
       `Sponsor: ${deal.sponsor}`,
       `Location: ${deal.location}`,
@@ -309,7 +309,7 @@ export function Underwriting() {
       "Strengths:",
       ...deal.strengths.map((strength) => `- ${strength}`),
       "",
-      `Reviewer: ${deal.reviewer ?? "CapIV IQ"}`,
+      `Reviewer: ${deal.reviewer ?? "JSL Tech IQ"}`,
       `Generated: ${new Date().toISOString()}`,
     ]
     return lines.join("\n")
@@ -341,7 +341,7 @@ export function Underwriting() {
             <p className="text-xs uppercase tracking-[0.35em] text-blue-200/80 mb-2">Underwriting Hub</p>
             <h1 className="text-2xl font-semibold text-white">Underwriting &amp; Risk Assessment</h1>
             <p className="text-slate-300 mt-2 max-w-3xl">
-              AI-calibrated scoring from Deal Source, Diligence Hub, and CapIV Access so every mandate enters the stack
+              AI-calibrated scoring from Deal Source, Diligence Hub, and JSL Tech Access so every mandate enters the stack
               with verifiable risk grading.
             </p>
           </div>

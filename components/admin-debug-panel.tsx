@@ -271,19 +271,19 @@ export function AdminDebugPanel() {
                   Dashboard
                 </Button>
                 <Button onClick={() => router.push("/core")} variant="secondary" size="sm">
-                  CapIV Core
+                  JSL Tech Core
                 </Button>
                 <Button onClick={() => router.push("/access")} variant="secondary" size="sm">
-                  CapIV Access
+                  JSL Tech Access
                 </Button>
                 <Button onClick={() => router.push("/deals")} variant="secondary" size="sm">
                   All Deals
                 </Button>
                 <Button onClick={() => router.push("/capiv-iq")} variant="secondary" size="sm">
-                  CapIV IQ
+                  JSL Tech IQ
                 </Button>
                 <Button onClick={() => router.push("/capiv-eq")} variant="secondary" size="sm">
-                  CapIV EQ
+                  JSL Tech EQ
                 </Button>
                 <Button onClick={() => router.push("/account")} variant="secondary" size="sm">
                   Account

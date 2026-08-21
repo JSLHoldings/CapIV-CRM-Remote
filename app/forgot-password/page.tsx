@@ -54,7 +54,7 @@ export default function ForgotPasswordPage() {
         <div className="w-full max-w-md space-y-8">
           {/* Header */}
           <div className="text-center space-y-2">
-            <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">CapIV™ Access</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">JSL Tech™ Access</p>
             <h1 className="text-3xl font-semibold text-white">Reset Password</h1>
             <p className="text-slate-400">
               {sent
@@ -128,7 +128,7 @@ export default function ForgotPasswordPage() {
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@capiv.com"
+                        placeholder="you@jsltech.com"
                         disabled={isLoading}
                         autoComplete="email"
                         className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"

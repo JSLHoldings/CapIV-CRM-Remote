@@ -22,10 +22,10 @@ const dealExtractionSchema = z.object({
     'Multifamily', 'Industrial', 'Office', 'Retail', 'Mixed-Use',
     'Student Housing', 'Hotel', 'Self-Storage', 'Medical', 'Other'
   ]).describe('Primary asset class or property type'),
-  // CapIV canonical taxonomy fields
+  // JSL Tech canonical taxonomy fields
   dealTypePrimary: z.enum([
     'RE_DIRECT', 'PRIVATE_CREDIT', 'FUND_GP_LP', 'OPCO_EQUITY', 'M_AND_A', 'SPV_COINVEST', 'PORTFOLIO_ASSET', 'DIGITAL_INTERFACE'
-  ]).describe('CapIV primary deal type. RE_DIRECT=direct real estate equity/JV; PRIVATE_CREDIT=debt/loan; FUND_GP_LP=fund or GP-LP interest; OPCO_EQUITY=operating company equity; M_AND_A=company/asset acquisition; SPV_COINVEST=single-asset SPV or co-invest; PORTFOLIO_ASSET=grouped/multi-asset; DIGITAL_INTERFACE=tokenized. Default to RE_DIRECT for a single real estate asset.'),
+  ]).describe('JSL Tech primary deal type. RE_DIRECT=direct real estate equity/JV; PRIVATE_CREDIT=debt/loan; FUND_GP_LP=fund or GP-LP interest; OPCO_EQUITY=operating company equity; M_AND_A=company/asset acquisition; SPV_COINVEST=single-asset SPV or co-invest; PORTFOLIO_ASSET=grouped/multi-asset; DIGITAL_INTERFACE=tokenized. Default to RE_DIRECT for a single real estate asset.'),
   transactionPurpose: z.enum([
     'acquisition', 'development', 'recap', 'refinance', 'growth', 'buyout', 'liquidity', 'fundraise', 'other'
   ]).describe('Primary transaction purpose'),

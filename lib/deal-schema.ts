@@ -1,4 +1,4 @@
-// CapIV Canonical Deal Schema v1.0
+// JSL Tech Canonical Deal Schema v1.0
 // Data contract derived from CAPIV-DATA-DEAL-001 (Deal Schema Architecture v1.0).
 // A single universal "deal envelope": identity/governance, core profile, capital
 // request, parties, economics, and the R0-R6 lifecycle state machine.

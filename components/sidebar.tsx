@@ -29,11 +29,11 @@ export function Sidebar() {
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", href: "/" },
-    { id: "core", label: "CapIV Core", href: "/core" },
-    { id: "access", label: "CapIV Access", href: "/access" },
+    { id: "core", label: "JSL Tech Core", href: "/core" },
+    { id: "access", label: "JSL Tech Access", href: "/access" },
     { id: "deals", label: "Deal Source", href: "/deals" },
-    { id: "capiv-iq", label: "CapIV IQ", href: "/capiv-iq" },
-    { id: "capiv-eq", label: "CapIV EQ", href: "/capiv-eq" },
+    { id: "capiv-iq", label: "JSL Tech IQ", href: "/capiv-iq" },
+    { id: "capiv-eq", label: "JSL Tech EQ", href: "/capiv-eq" },
     { id: "account", label: "Account", href: "/account" },
     // Admin console is only shown to users with the admin role.
     ...(isAdmin ? [{ id: "admin", label: "Admin", href: "/admin", isAdmin: true }] : []),
@@ -43,7 +43,7 @@ export function Sidebar() {
     <div className="w-64 bg-slate-950 text-slate-100 border-r border-slate-800 flex flex-col">
       <div className="px-6 py-5 border-b border-slate-800">
         <div className="flex items-center justify-between">
-          <h1 className="text-base font-semibold tracking-[0.3em] text-blue-200 uppercase">CapIV</h1>
+          <h1 className="text-base font-semibold tracking-[0.3em] text-blue-200 uppercase">JSL Tech</h1>
           {debugMode && (
             <Badge variant="destructive" className="text-xs bg-red-600/80 text-white border-none">
               DEBUG

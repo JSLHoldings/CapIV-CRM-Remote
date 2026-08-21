@@ -99,7 +99,7 @@ function confidenceColor(score: number) {
 // ── Fake extraction progress messages ─────────────────────────────────────────
 const PROGRESS_STEPS = [
   { pct: 10, msg: "Uploading document..." },
-  { pct: 30, msg: "Processing with CapIV AI..." },
+  { pct: 30, msg: "Processing with JSL Tech AI..." },
   { pct: 55, msg: "Extracting deal fields..." },
   { pct: 75, msg: "Identifying sponsor & location..." },
   { pct: 90, msg: "Structuring financial data..." },
@@ -244,7 +244,7 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
           </DialogTitle>
           <p className="text-sm text-slate-400 mt-1">
             Upload an Executive Summary, Offering Memorandum, Term Sheet, or Investment Deck.
-            CapIV AI will extract and pre-populate the deal form.
+            JSL Tech AI will extract and pre-populate the deal form.
           </p>
         </DialogHeader>
 
@@ -527,9 +527,9 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
                   rows={3} className="bg-slate-900 border-slate-700 text-white text-sm resize-none" />
               </div>
 
-              {/* CapIV Canonical Classification */}
+              {/* JSL Tech Canonical Classification */}
               <div className="col-span-2">
-                <p className="text-xs text-slate-400 mb-2 uppercase tracking-wider">CapIV Classification</p>
+                <p className="text-xs text-slate-400 mb-2 uppercase tracking-wider">JSL Tech Classification</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-slate-400 text-xs">Primary Deal Type</Label>

@@ -275,7 +275,7 @@ export function AIDueDiligence() {
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-blue-300">
             <Brain className="w-4 h-4" />
-            <span>CapIV AI</span>
+            <span>JSL Tech AI</span>
           </div>
           <h2 className="text-2xl font-semibold text-white">
             AI-Powered Diligence

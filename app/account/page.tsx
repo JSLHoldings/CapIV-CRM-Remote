@@ -724,7 +724,7 @@ export default function AccountPage() {
                     <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-5 flex items-center justify-between">
                       <div>
                         <p className="text-sm text-slate-400 uppercase tracking-wide text-xs">Current Plan</p>
-                        <p className="text-white font-semibold text-lg mt-1">CapIV™ Professional</p>
+                        <p className="text-white font-semibold text-lg mt-1">JSL Tech™ Professional</p>
                         <p className="text-slate-400 text-sm">Full access to IQ, EQ, Deals, and Portfolio tools.</p>
                       </div>
                       <Badge className="bg-blue-600/20 text-blue-300 border border-blue-500/30">Active</Badge>

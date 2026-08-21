@@ -158,7 +158,7 @@ export function AdminActivityLog() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `capiv-activity-${new Date().toISOString().split("T")[0]}.csv`
+    a.download = `jsl-tech-activity-${new Date().toISOString().split("T")[0]}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }

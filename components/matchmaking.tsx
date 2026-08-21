@@ -194,12 +194,12 @@ export function Matchmaking() {
         status: legacyStatusFor(result.candidateState),
         match_reasons: result.reasonCodes.map((code) => reasonDescription(code)),
         intelligence_basis: {
-          engine: `CapIV Matching Logic ${MATCHING_LOGIC_VERSION}`,
+          engine: `JSL Tech Matching Logic ${MATCHING_LOGIC_VERSION}`,
           scored_at: result.scoredAt,
           policy_version: result.policyVersion,
           private_core_version: result.privateCoreVersion,
         },
-        decision_log: [{ action: "Evaluated", at: result.scoredAt, by: `CapIV Matching ${MATCHING_LOGIC_VERSION}` }],
+        decision_log: [{ action: "Evaluated", at: result.scoredAt, by: `JSL Tech Matching ${MATCHING_LOGIC_VERSION}` }],
         // v1.1 columns
         track,
         match_fit_band: result.triVector.matchFit,
@@ -347,7 +347,7 @@ export function Matchmaking() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = `capiv_matches_${new Date().toISOString().split("T")[0]}.csv`
+    link.download = `jsl-tech_matches_${new Date().toISOString().split("T")[0]}.csv`
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -416,7 +416,7 @@ export function Matchmaking() {
             <h1 className="text-2xl font-semibold text-white">Reciprocal Capital Matching</h1>
             <p className="text-slate-300 mt-2 max-w-3xl">
               Each pair is evaluated in both directions and scored on three independent dimensions —
-              Match Fit, Information Confidence, and Execution Readiness — governed by CapIV EQ.
+              Match Fit, Information Confidence, and Execution Readiness — governed by JSL Tech EQ.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

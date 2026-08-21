@@ -35,7 +35,7 @@ const featureCards = [
     icon: Building2,
     title: "Deal Flow",
     subtitle: "See What's Moving",
-    description: "Access live opportunities curated through CapIV's intelligence filters.",
+    description: "Access live opportunities curated through JSL Tech's intelligence filters.",
     href: "/deals",
     isReady: true
   },
@@ -49,7 +49,7 @@ const featureCards = [
   },
   {
     icon: BarChart3,
-    title: "CapIV EQ",
+    title: "JSL Tech EQ",
     subtitle: "Model & Measure",
     description: "Run investment calculators and monitor live portfolio KPIs.",
     href: "/capiv-eq",
@@ -75,13 +75,13 @@ const featureCards = [
     icon: Lock,
     title: "Vault Cards",
     subtitle: "Access. Privilege. Power.",
-    description: "Manage your CapIV™ Vault privileges and member-level benefits.",
+    description: "Manage your JSL Tech™ Vault privileges and member-level benefits.",
     href: "/account",
     isReady: false
   },
   {
     icon: Shield,
-    title: "CapIV IQ",
+    title: "JSL Tech IQ",
     subtitle: "Diligence + Underwriting",
     description: "Govern NDAs, Persona compliance, and underwriting diagnostics together.",
     href: "/capiv-iq",
@@ -91,7 +91,7 @@ const featureCards = [
     icon: HelpCircle,
     title: "Support & Concierge",
     subtitle: "Human + AI Assistance",
-    description: "Get strategic help from the CapIV™ Concierge Team.",
+    description: "Get strategic help from the JSL Tech™ Concierge Team.",
     href: "/account",
     isReady: false
   }
@@ -120,7 +120,7 @@ export function CapIVCore({ selectedInvestor, onInvestorSelect, onDealSelect }: 
             Welcome, {firstName}
           </h1>
           <p className="text-xl text-white mb-2">
-            This is CapIV™ Core — your private asset hub.
+            This is JSL Tech™ Core — your private asset hub.
           </p>
           <p className="text-lg text-white italic">
             Where intelligent deals start happening.

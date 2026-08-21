@@ -65,7 +65,7 @@ interface Deal {
 }
 
 // ── OS Execution Pipeline ──────────────────────────────────────────────────────
-// Implements the 7-stage CapIV OS pipeline: Identity → Permissions → Intelligence
+// Implements the 7-stage JSL Tech OS pipeline: Identity → Permissions → Intelligence
 // → Compliance → Execution → Distribution → Audit Log
 
 function runOSPipeline(deal: Omit<Deal, "id">): OSPipelineResult {
@@ -387,7 +387,7 @@ export function Deals() {
           <p className="text-xs uppercase tracking-[0.35em] text-blue-400/70 mb-1">Deal Source</p>
           <h1 className="text-2xl font-semibold text-white">Investment Opportunities</h1>
           <p className="text-slate-400 text-sm mt-1">
-            All deals pass through the CapIV OS execution pipeline before activation.
+            All deals pass through the JSL Tech OS execution pipeline before activation.
           </p>
         </div>
         <div className="flex gap-3">
@@ -641,7 +641,7 @@ export function Deals() {
                 </span>
               )}
             </DialogTitle>
-            <p className="text-sm text-slate-400">Deal will be run through the CapIV OS execution pipeline on submission.</p>
+            <p className="text-sm text-slate-400">Deal will be run through the JSL Tech OS execution pipeline on submission.</p>
           </DialogHeader>
           <form onSubmit={handleAddDeal} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">

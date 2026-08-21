@@ -558,7 +558,7 @@ export function CompanyInformationSurvey() {
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Admission & Compliance</h3>
                 <p className="text-sm text-muted-foreground">
-                  Provide the information required for CapIV™ admission so our team can verify the legitimacy of your
+                  Provide the information required for JSL Tech™ admission so our team can verify the legitimacy of your
                   application before activating access.
                 </p>
 
@@ -601,12 +601,12 @@ export function CompanyInformationSurvey() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="digitalFileRepositoryNotes">CapIV Member Profile Uploads</Label>
+                    <Label htmlFor="digitalFileRepositoryNotes">JSL Tech Member Profile Uploads</Label>
                     <Textarea
                       id="digitalFileRepositoryNotes"
                       value={formData.digitalFileRepositoryNotes}
                       onChange={(e) => updateField("digitalFileRepositoryNotes", e.target.value)}
-                      placeholder="Reference the secure folder or note where uploads are stored in your CapIV Member Profile."
+                      placeholder="Reference the secure folder or note where uploads are stored in your JSL Tech Member Profile."
                       rows={3}
                     />
                   </div>
@@ -667,7 +667,7 @@ export function CompanyInformationSurvey() {
                       />
                       <div className="space-y-1">
                         <Label htmlFor="digitalFileUploadReady" className="cursor-pointer font-medium">
-                          Documents Loaded to CapIV™ Member Profile
+                          Documents Loaded to JSL Tech™ Member Profile
                         </Label>
                         <p className="text-sm text-muted-foreground">
                           Copies of supporting documents have been uploaded to the secure digital file for future audits.

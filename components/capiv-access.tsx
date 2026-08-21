@@ -43,7 +43,7 @@ const featureCards = [
   },
   {
     icon: FileText,
-    title: "CapIV IQ",
+    title: "JSL Tech IQ",
     subtitle: "Transparency Meets Control",
     description: "Access NDAs, Persona verifications, and underwriting diagnostics together.",
     href: "/capiv-iq"
@@ -57,7 +57,7 @@ const featureCards = [
   },
   {
     icon: BarChart3,
-    title: "CapIV EQ",
+    title: "JSL Tech EQ",
     subtitle: "Scale What's Winning",
     description: "View analytics and run calculators without leaving the command plane.",
     href: "/capiv-eq"
@@ -68,8 +68,8 @@ const actionButtons = [
   { text: "Submit a Deal", href: "/deals" },
   { text: "Request Capital Match", href: "/matchmaking" },
   { text: "Invite a Partner", href: "/matchmaking" },
-  { text: "Open CapIV IQ", href: "/capiv-iq" },
-  { text: "View CapIV EQ", href: "/capiv-eq" }
+  { text: "Open JSL Tech IQ", href: "/capiv-iq" },
+  { text: "View JSL Tech EQ", href: "/capiv-eq" }
 ]
 
 export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
@@ -96,7 +96,7 @@ export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
             Welcome, {firstName}
           </h1>
           <p className="text-xl text-white mb-2">
-            This is CapIV™ Access — your gateway to verified opportunities and intelligent deal flow.
+            This is JSL Tech™ Access — your gateway to verified opportunities and intelligent deal flow.
           </p>
           <p className="text-lg text-white italic">
             Where relationships, credibility and capital connect.
@@ -148,7 +148,7 @@ export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
         {/* Footer */}
         <div className="text-center">
           <p className="text-sm text-gray-400">
-            CapIV™ Access — Empowering You. Building Intelligent Wealth.
+            JSL Tech™ Access — Empowering You. Building Intelligent Wealth.
           </p>
         </div>
       </div>

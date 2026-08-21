@@ -140,7 +140,7 @@ export function DueDiligence({ selectedDocument, onDocumentSelect }: DueDiligenc
       `Expires: ${doc.expiryDate}`,
       `Size: ${doc.size}`,
       "",
-      "CapIV IQ Diligence Note:",
+      "JSL Tech IQ Diligence Note:",
       "Document pulled for verification and audit traceability.",
     ].join("\n")
   }
@@ -151,7 +151,7 @@ export function DueDiligence({ selectedDocument, onDocumentSelect }: DueDiligenc
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = `${doc.name.replace(/\s+/g, "_").toLowerCase()}_capiv_pull.txt`
+    link.download = `${doc.name.replace(/\s+/g, "_").toLowerCase()}_jsltech_pull.txt`
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -226,7 +226,7 @@ export function DueDiligence({ selectedDocument, onDocumentSelect }: DueDiligenc
                 Launch Persona Verification
               </Button>
               <p className="text-xs text-slate-400">
-                Persona verifications sync across CapIV™ Access, deal rooms, and audit exports.
+                Persona verifications sync across JSL Tech™ Access, deal rooms, and audit exports.
               </p>
             </div>
           </div>
@@ -463,7 +463,7 @@ export function DueDiligence({ selectedDocument, onDocumentSelect }: DueDiligenc
               <li>Supporting documents to verify financials, entitlements, and counterparties.</li>
             </ul>
             <p className="text-slate-400">
-              Upload documents into the CapIV™ Member Profile digital file so the diligence team can reference them
+              Upload documents into the JSL Tech™ Member Profile digital file so the diligence team can reference them
               instantly.
             </p>
             <div className="flex flex-wrap gap-3 pt-3">

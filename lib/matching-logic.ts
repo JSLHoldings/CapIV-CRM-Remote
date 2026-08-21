@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// CapIV OS — Matching Logic v1.1 (implementation-safe contracts)
+// JSL Tech OS — Matching Logic v1.1 (implementation-safe contracts)
 //
 // This module is the "Implementation Layer" described in the JSL Capital
 // Intelligence System Matching Logic v1.1 spec (§3.14). It contains ONLY

@@ -514,7 +514,7 @@ export function CapIVEQWorkspace({ defaultTab = "classify" }: { defaultTab?: EQT
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.4em] text-blue-300/70 mb-1">CapIV™ EQ</p>
+          <p className="text-xs uppercase tracking-[0.4em] text-blue-300/70 mb-1">JSL Tech™ EQ</p>
           <h1 className="text-2xl font-semibold text-white">Capital Governance Engine</h1>
           <p className="text-sm text-slate-400 mt-1 max-w-xl">
             Classify capital sources, apply eligibility rules, enforce constraints, log decisions, and exercise override authority.

@@ -26,7 +26,7 @@ export function CapIVIQWorkspace({ defaultTab = "due-diligence" }: CapIVIQWorksp
             <Shield className="w-7 h-7 text-blue-300" />
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">CapIV™ IQ</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">JSL Tech™ IQ</p>
             <h1 className="text-3xl font-semibold text-white mt-1">Intelligence &amp; Diligence Command</h1>
             <p className="text-slate-300 mt-1">
               Govern diligence workflows, Persona verifications, and underwriting diagnostics from a single pane.

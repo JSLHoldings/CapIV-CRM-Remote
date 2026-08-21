@@ -154,10 +154,10 @@ This Agreement is governed by the laws of the State of Delaware.
 Effective upon electronic signature.
 
 1. ACCEPTANCE
-By signing below, you agree to be bound by these Terms of Service governing your use of the CapIV™ platform operated by JSL Capital Management.
+By signing below, you agree to be bound by these Terms of Service governing your use of the JSL Tech™ platform operated by JSL Capital Management.
 
 2. PLATFORM USE
-The CapIV™ platform is provided for qualified investors and capital market participants. Use is restricted to lawful purposes in accordance with applicable securities laws.
+The JSL Tech™ platform is provided for qualified investors and capital market participants. Use is restricted to lawful purposes in accordance with applicable securities laws.
 
 3. NO INVESTMENT ADVICE
 Nothing on the platform constitutes investment advice, a solicitation, or an offer to buy or sell securities. All decisions are made independently by the user.
@@ -800,7 +800,7 @@ export function DocumentVault() {
                 Terms of Service
               </CardTitle>
               <CardDescription className="text-slate-400">
-                Review and sign the CapIV™ platform Terms of Service.
+                Review and sign the JSL Tech™ platform Terms of Service.
               </CardDescription>
             </CardHeader>
             <CardContent>
