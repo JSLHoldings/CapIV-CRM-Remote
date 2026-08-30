@@ -7,8 +7,16 @@ import { useAuth } from "@/hooks/use-auth"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
-export function Sidebar() {
+interface SidebarProps {
+  /** Extra classes to control visibility/positioning (desktop rail vs. mobile drawer). */
+  className?: string
+  /** Called when a nav link is tapped — used to close the mobile drawer. */
+  onNavigate?: () => void
+}
+
+export function Sidebar({ className, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const { user, logout } = useAuth()
   const [debugMode, setDebugMode] = useState(false)
@@ -40,7 +48,7 @@ export function Sidebar() {
   ]
 
   return (
-    <div className="w-64 bg-slate-950 text-slate-100 border-r border-slate-800 flex flex-col">
+    <div className={cn("w-64 bg-slate-950 text-slate-100 border-r border-slate-800 flex flex-col", className)}>
       <div className="px-6 py-5 border-b border-slate-800">
         <div className="flex items-center justify-between">
           <h1 className="text-base font-semibold tracking-[0.3em] text-blue-200 uppercase">JSL Tech</h1>
@@ -58,7 +66,7 @@ export function Sidebar() {
           const isActive = pathname === item.href
 
           return (
-            <Link key={item.id} href={item.href}>
+            <Link key={item.id} href={item.href} onClick={onNavigate}>
               <Button
                 variant="ghost"
                 className={`w-full justify-start rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${

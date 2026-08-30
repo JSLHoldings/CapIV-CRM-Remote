@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   Users, TrendingUp, Target, MapPin, Search, ArrowRight, ArrowLeftRight, CheckCircle2,
   AlertCircle, Loader2, RefreshCw, Shield, ShieldCheck, ShieldAlert, FileText, Gauge,
+  Sparkles, Bot, Wand2, MessagesSquare,
 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase/client"
@@ -405,29 +406,29 @@ export function Matchmaking() {
   }
 
   return (
-    <div className="space-y-6 text-slate-100">
-      <div className="rounded-3xl border border-purple-500/20 bg-gradient-to-r from-purple-600/20 via-slate-900 to-slate-950 p-6 shadow-inner shadow-purple-500/10 space-y-4">
+    <div className="space-y-6 text-slate-100 p-4 sm:p-6 lg:p-8">
+      <div className="rounded-3xl border border-purple-500/20 bg-gradient-to-r from-purple-600/20 via-slate-900 to-slate-950 p-5 sm:p-6 shadow-inner shadow-purple-500/10 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
               <p className="text-xs uppercase tracking-[0.35em] text-purple-200/80">Matching Intelligence</p>
               <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">{MATCHING_LOGIC_VERSION}</Badge>
             </div>
-            <h1 className="text-2xl font-semibold text-white">Reciprocal Capital Matching</h1>
-            <p className="text-slate-300 mt-2 max-w-3xl">
+            <h1 className="text-xl sm:text-2xl font-semibold text-white text-balance">Reciprocal Capital Matching</h1>
+            <p className="text-slate-300 mt-2 max-w-3xl text-sm sm:text-base text-pretty">
               Each pair is evaluated in both directions and scored on three independent dimensions —
               Match Fit, Information Confidence, and Execution Readiness — governed by JSL Tech EQ.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button className="bg-blue-600 hover:bg-blue-500 text-white" onClick={handleRunNewMatch} disabled={isSaving}>
+            <Button className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-500 text-white" onClick={handleRunNewMatch} disabled={isSaving}>
               <Target className="h-4 w-4 mr-2" />
               Evaluate New Pair
             </Button>
-            <Button variant="outline" className="border-slate-500/60 text-slate-200 hover:border-blue-400" onClick={handleExportMatches}>
+            <Button variant="outline" className="flex-1 sm:flex-none border-slate-500/60 text-slate-200 hover:border-blue-400" onClick={handleExportMatches}>
               Export
             </Button>
-            <Button variant="outline" className="border-slate-600 text-slate-300" onClick={loadMatches} disabled={isLoading}>
+            <Button variant="outline" className="flex-1 sm:flex-none border-slate-600 text-slate-300" onClick={loadMatches} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
@@ -441,6 +442,8 @@ export function Matchmaking() {
         <StatCard label="Needs Review" value={stats.review} icon={<AlertCircle className="h-8 w-8 text-amber-300" />} valueClass="text-amber-300" />
         <StatCard label="On Hold" value={stats.hold} icon={<Shield className="h-8 w-8 text-orange-300" />} valueClass="text-orange-300" />
       </div>
+
+      <AiFrameworkSection />
 
       <div className="flex flex-col lg:flex-row lg:items-center gap-4">
         <div className="relative flex-1">
@@ -698,18 +701,92 @@ export function Matchmaking() {
   )
 }
 
+// ── AI framework (forward-looking preview, not yet wired to a model) ─────────
+// Placeholder surface reserved for an upcoming AI copilot layered on top of the
+// deterministic v1.1 engine. Intentionally inert — the input and action are
+// disabled until the framework is connected.
+function AiFrameworkSection() {
+  const capabilities = [
+    {
+      icon: <MessagesSquare className="h-5 w-5 text-blue-300" />,
+      title: "Natural-language matching",
+      body: "Describe an ideal counterparty in plain English and let the copilot draft candidate criteria.",
+    },
+    {
+      icon: <Wand2 className="h-5 w-5 text-purple-300" />,
+      title: "Automated evidence synthesis",
+      body: "Summarize dossiers and reconcile claims into a first-pass Information Confidence read.",
+    },
+    {
+      icon: <Bot className="h-5 w-5 text-emerald-300" />,
+      title: "Explainable recommendations",
+      body: "Every suggestion cites the tri-vector bands and reason codes behind it — never a black box.",
+    },
+  ]
+
+  return (
+    <section
+      aria-label="AI matching framework preview"
+      className="relative overflow-hidden rounded-3xl border border-blue-500/20 bg-gradient-to-br from-blue-600/10 via-slate-900 to-slate-950 p-5 sm:p-6"
+    >
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10">
+              <Sparkles className="h-5 w-5 text-blue-300" />
+            </span>
+            <div>
+              <h2 className="text-base sm:text-lg font-semibold text-white">AI Matching Framework</h2>
+              <p className="text-xs text-slate-400">Copilot layer on top of the deterministic v1.1 engine</p>
+            </div>
+          </div>
+          <Badge className="bg-blue-500/15 text-blue-200 border border-blue-500/30 text-[10px] uppercase tracking-[0.2em]">
+            Preview · Coming soon
+          </Badge>
+        </div>
+
+        {/* Inert prompt surface reserved for the future model integration */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Input
+            disabled
+            aria-label="AI matching prompt (coming soon)"
+            placeholder="Describe your ideal capital partner or opportunity in plain language…"
+            className="flex-1 bg-slate-900/80 border border-slate-800 text-white placeholder:text-slate-500"
+          />
+          <Button disabled className="bg-blue-600/60 text-white sm:w-auto w-full" title="Available in an upcoming release">
+            <Sparkles className="h-4 w-4 mr-2" />
+            Ask JSL Tech AI
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {capabilities.map((c) => (
+            <div key={c.title} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                {c.icon}
+                <p className="text-sm font-medium text-white text-pretty">{c.title}</p>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">{c.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 // ── Small presentational helpers ─────────────────────────────────────────────
 
 function StatCard({ label, value, icon, valueClass }: { label: string; value: number; icon: React.ReactNode; valueClass: string }) {
   return (
     <Card className="bg-slate-900/80 border border-slate-800">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-slate-400">{label}</p>
-            <p className={`text-2xl font-bold mt-1 ${valueClass}`}>{value}</p>
+      <CardContent className="p-4 sm:p-6">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-xs sm:text-sm text-slate-400 truncate">{label}</p>
+            <p className={`text-xl sm:text-2xl font-bold mt-1 ${valueClass}`}>{value}</p>
           </div>
-          {icon}
+          <span className="shrink-0">{icon}</span>
         </div>
       </CardContent>
     </Card>
