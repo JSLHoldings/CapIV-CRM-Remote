@@ -16,8 +16,9 @@ import {
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
-import { FlagTagManager } from "@/components/flag-tag-manager"
-import { suggestFlagsForMatch, FLAG_CATALOG, flagBadgeClass, getFlag } from "@/lib/flags-tags"
+import { RiskFlagManager } from "@/components/risk-flags"
+import { TagManager } from "@/components/tag-manager"
+import { detectMatchRiskFlags, RISK_CATALOG, riskBadgeClass, getRiskFlag } from "@/lib/risk-flags"
 import {
   type Band, type Track, type CandidateState, type Direction, type DirectionResult,
   type TriVector, type RecommendedAction, type DecisionPacket, type EvaluationInput,
@@ -221,16 +222,14 @@ export function Matchmaking() {
         decision_packet: packet,
         evaluation_id: evaluationId,
         logic_version: MATCHING_LOGIC_VERSION,
-        // Auto-suggested flags derived from the evaluation signals.
-        flags: suggestFlagsForMatch({
+        // Risk flags detected by the decision engine from this evaluation.
+        flags: detectMatchRiskFlags({
           candidateState: result.candidateState,
           reasonCodes: result.reasonCodes,
           reciprocalPass: result.reciprocalPass,
-          bands: {
-            matchFit: result.triVector.matchFit,
-            informationConfidence: result.triVector.informationConfidence,
-            executionReadiness: result.triVector.executionReadiness,
-          },
+          matchFit: result.triVector.matchFit,
+          informationConfidence: result.triVector.informationConfidence,
+          executionReadiness: result.triVector.executionReadiness,
         }),
         tags: [],
       }
@@ -508,10 +507,10 @@ export function Matchmaking() {
         </div>
       </div>
 
-      {/* Flag filter row */}
+      {/* Risk filter row */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-slate-400 mr-1">Filter by flag:</span>
-        {FLAG_CATALOG.map((f) => {
+        <span className="text-xs text-slate-400 mr-1">Filter by risk:</span>
+        {RISK_CATALOG.map((f) => {
           const active = flagFilter.includes(f.id)
           return (
             <button
@@ -519,10 +518,10 @@ export function Matchmaking() {
               type="button"
               onClick={() => setFlagFilter((prev) => (active ? prev.filter((x) => x !== f.id) : [...prev, f.id]))}
               className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] transition-all ${
-                active ? flagBadgeClass(f.id) : "border border-slate-600 text-slate-400 hover:border-slate-400"
+                active ? riskBadgeClass(f.id) : "border border-slate-600 text-slate-400 hover:border-slate-400"
               }`}
             >
-              {getFlag(f.id)?.label}
+              {getRiskFlag(f.id)?.label}
             </button>
           )
         })}
@@ -606,23 +605,31 @@ export function Matchmaking() {
                 </div>
               )}
 
-              {/* Flags & tags — editing is isolated from the card's open-detail click */}
-              <div onClick={(e) => e.stopPropagation()} className="pt-3 border-t border-slate-800">
-                <FlagTagManager
-                  flags={match.flags}
-                  tags={match.tags}
-                  suggestions={suggestFlagsForMatch({
-                    candidateState: match.candidateState,
-                    reasonCodes: match.reasonCodes,
-                    reciprocalPass: match.reciprocalPass,
-                    bands: {
+              {/* Risk flags (decision layer) and tags are two separate systems —
+                  editing is isolated from the card's open-detail click. */}
+              <div onClick={(e) => e.stopPropagation()} className="pt-3 border-t border-slate-800 space-y-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] uppercase tracking-wide text-slate-500 w-10 shrink-0">Risk</span>
+                  <RiskFlagManager
+                    flags={match.flags}
+                    detected={detectMatchRiskFlags({
+                      candidateState: match.candidateState,
+                      reasonCodes: match.reasonCodes,
+                      reciprocalPass: match.reciprocalPass,
                       matchFit: match.triVector.matchFit,
                       informationConfidence: match.triVector.informationConfidence,
                       executionReadiness: match.triVector.executionReadiness,
-                    },
-                  })}
-                  onChange={(next) => handleUpdateFlagsTags(match.id, next)}
-                />
+                    })}
+                    onChange={(flags) => handleUpdateFlagsTags(match.id, { flags, tags: match.tags })}
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] uppercase tracking-wide text-slate-500 w-10 shrink-0">Tags</span>
+                  <TagManager
+                    tags={match.tags}
+                    onChange={(tags) => handleUpdateFlagsTags(match.id, { flags: match.flags, tags })}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

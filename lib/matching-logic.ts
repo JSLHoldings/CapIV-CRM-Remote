@@ -18,6 +18,8 @@
 //  - Presentation-safe decision packet (R-19, §3.12)
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { detectMatchRiskFlags as detectRiskFromSignals } from "./risk-flags"
+
 export const MATCHING_LOGIC_VERSION = "v1.1"
 export const PRIVATE_CORE_VERSION = "pc-2026.02" // opaque reference only
 export const POLICY_VERSION = "policy-2026.02"
@@ -528,11 +530,28 @@ export interface DecisionPacket {
   reciprocalPass: boolean
   gateResults: { label: string; result: "PASS" | "HOLD" | "REVIEW" | "BLOCK" }[]
   reasonCodes: string[]
+  riskFlags: string[] // detected risk-flag ids (risk layer of the decision)
   recommendation: RecommendedAction
   limitations: string[]
   candidateState: CandidateState
   versions: { policy: string; privateCore: string; matchingLogic: string }
   generatedAt: string
+}
+
+/**
+ * Risk layer of the decision-making system: derive the detected risk flags from
+ * a completed evaluation. Kept here so risk detection is part of the engine
+ * output, not a UI afterthought.
+ */
+export function detectMatchRiskFlags(result: EvaluationResult): string[] {
+  return detectRiskFromSignals({
+    candidateState: result.candidateState,
+    reasonCodes: result.reasonCodes,
+    reciprocalPass: result.reciprocalPass,
+    matchFit: result.triVector.matchFit,
+    informationConfidence: result.triVector.informationConfidence,
+    executionReadiness: result.triVector.executionReadiness,
+  })
 }
 
 export function buildDecisionPacket(params: {
@@ -565,6 +584,7 @@ export function buildDecisionPacket(params: {
     reciprocalPass: result.reciprocalPass,
     gateResults,
     reasonCodes: result.reasonCodes,
+    riskFlags: detectMatchRiskFlags(result),
     recommendation: result.recommendedAction,
     limitations: result.limitations,
     candidateState: result.candidateState,

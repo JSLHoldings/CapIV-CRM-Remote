@@ -177,8 +177,8 @@ export interface Deal {
   // 6.6 economics / returns
   targetIrr: string
   targetMoic: string
-  // Curated flags (from lib/flags-tags.ts) and free-form tags. Optional for
-  // backward compatibility with existing records.
+  // Risk flags (detected — see lib/risk-flags.ts) and free-form tags (see
+  // lib/tags.ts). Two separate systems. Optional for backward compatibility.
   flags?: string[]
   tags?: string[]
 }

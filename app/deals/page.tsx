@@ -25,8 +25,9 @@ import {
 import { ProtectedRoute } from "@/components/protected-route"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { DealUploadDialog, type ExtractedDealFields } from "@/components/deal-upload-dialog"
-import { FlagTagManager } from "@/components/flag-tag-manager"
-import { suggestFlagsForDealRecord, FLAG_CATALOG, flagBadgeClass, getFlag } from "@/lib/flags-tags"
+import { RiskFlagManager } from "@/components/risk-flags"
+import { TagManager } from "@/components/tag-manager"
+import { detectDealRiskFlags, RISK_CATALOG, riskBadgeClass, getRiskFlag } from "@/lib/risk-flags"
 import {
   type Deal,
   DEAL_TYPES, SOURCE_CHANNELS, DATA_CLASSIFICATIONS, TRANSACTION_PURPOSES,
@@ -73,8 +74,8 @@ const initialDeals: Deal[] = [
     sponsorRole: "sponsor",
     targetIrr: "14.2%",
     targetMoic: "1.9x",
-    flags: ["priority", "hot_lead"],
-    tags: ["Sunbelt", "Value-Add", "Q2 Target"],
+    flags: [],
+    tags: ["Priority", "Hot Lead", "Sun Belt", "Value-Add", "Q2 Target"],
   },
   {
     id: 2,
@@ -101,8 +102,8 @@ const initialDeals: Deal[] = [
     sponsorRole: "sponsor",
     targetIrr: "12.8%",
     targetMoic: "1.7x",
-    flags: ["needs_review", "watchlist"],
-    tags: ["CBD Office", "Reposition"],
+    flags: ["needs_review"],
+    tags: ["Watchlist", "CBD Office", "Reposition"],
   },
   {
     id: 3,
@@ -129,8 +130,8 @@ const initialDeals: Deal[] = [
     sponsorRole: "sponsor",
     targetIrr: "16.1%",
     targetMoic: "2.1x",
-    flags: ["verified"],
-    tags: ["Grocery-Anchored", "Stabilized"],
+    flags: [],
+    tags: ["Verified", "Grocery-Anchored", "Stabilized"],
   },
 ]
 
@@ -855,8 +856,8 @@ export default function DealsPage() {
               {filteredDeals.length} opportunities
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-slate-400 mr-1">Filter by flag:</span>
-              {FLAG_CATALOG.map((f) => {
+              <span className="text-xs text-slate-400 mr-1">Filter by risk:</span>
+              {RISK_CATALOG.map((f) => {
                 const active = flagFilter.includes(f.id)
                 return (
                   <button
@@ -864,10 +865,10 @@ export default function DealsPage() {
                     type="button"
                     onClick={() => setFlagFilter((prev) => (active ? prev.filter((x) => x !== f.id) : [...prev, f.id]))}
                     className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] transition-all ${
-                      active ? flagBadgeClass(f.id) : "border border-slate-700 text-slate-400 hover:border-slate-500"
+                      active ? riskBadgeClass(f.id) : "border border-slate-700 text-slate-400 hover:border-slate-500"
                     }`}
                   >
-                    {getFlag(f.id)?.label}
+                    {getRiskFlag(f.id)?.label}
                   </button>
                 )
               })}
@@ -997,17 +998,27 @@ export default function DealsPage() {
                       )
                     })()}
 
-                    {/* Flags & tags — editing isolated from the card's open-detail click */}
-                    <div onClick={(event) => event.stopPropagation()} className="pt-3 border-t border-slate-800">
-                      <FlagTagManager
-                        flags={deal.flags ?? []}
-                        tags={deal.tags ?? []}
-                        suggestions={suggestFlagsForDealRecord({
-                          lifecycleState: deal.lifecycleState,
-                          dataClassification: deal.dataClassification,
-                        })}
-                        onChange={(next) => handleUpdateFlagsTags(deal.id, next)}
-                      />
+                    {/* Risk flags (detection) and tags are separate systems —
+                        editing isolated from the card's open-detail click. */}
+                    <div onClick={(event) => event.stopPropagation()} className="pt-3 border-t border-slate-800 space-y-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] uppercase tracking-wide text-slate-500 w-10 shrink-0">Risk</span>
+                        <RiskFlagManager
+                          flags={deal.flags ?? []}
+                          detected={detectDealRiskFlags({
+                            lifecycleState: deal.lifecycleState,
+                            dataClassification: deal.dataClassification,
+                          })}
+                          onChange={(flags) => handleUpdateFlagsTags(deal.id, { flags, tags: deal.tags ?? [] })}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] uppercase tracking-wide text-slate-500 w-10 shrink-0">Tags</span>
+                        <TagManager
+                          tags={deal.tags ?? []}
+                          onChange={(tags) => handleUpdateFlagsTags(deal.id, { flags: deal.flags ?? [], tags })}
+                        />
+                      </div>
                     </div>
 
                     <div className="pt-2">
