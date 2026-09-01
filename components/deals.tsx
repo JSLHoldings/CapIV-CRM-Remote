@@ -20,6 +20,8 @@ import { SearchFilters, type FilterOptions } from "@/components/search-filters"
 import { DealUploadDialog, type ExtractedDealFields } from "@/components/deal-upload-dialog"
 import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
+import { FlagTagManager } from "@/components/flag-tag-manager"
+import { suggestFlagsForDeal, FLAG_CATALOG, flagBadgeClass, getFlag } from "@/lib/flags-tags"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -62,6 +64,8 @@ interface Deal {
   keyMetrics: { capRate: string; noi: string; occupancy: string; yearBuilt: string }
   timeline: Array<{ date: string; milestone: string; status: "completed" | "pending" | "upcoming" }>
   osPipelineResult?: OSPipelineResult
+  flags: string[]
+  tags: string[]
 }
 
 // ── OS Execution Pipeline ──────────────────────────────────────────────────────
@@ -170,6 +174,8 @@ function dbRowToDeal(row: Record<string, unknown>): Deal {
     keyMetrics: (row.key_metrics as Deal["keyMetrics"]) ?? { capRate: "—", noi: "—", occupancy: "—", yearBuilt: "—" },
     timeline: (row.timeline as Deal["timeline"]) ?? [],
     osPipelineResult: row.os_pipeline_result as OSPipelineResult | undefined,
+    flags: (row.flags as string[]) ?? [],
+    tags: (row.tags as string[]) ?? [],
   }
 }
 
@@ -191,6 +197,7 @@ export function Deals() {
     riskProfile: [], investmentSize: { min: "", max: "" }, role: [],
   })
   const [sortBy, setSortBy] = useState("date")
+  const [flagFilter, setFlagFilter] = useState<string[]>([])
 
   // New deal form state
   const [form, setForm] = useState({
@@ -238,7 +245,8 @@ export function Deals() {
       const minSize = filters.investmentSize?.min ? parseFloat(filters.investmentSize.min) : 0
       const maxSize = filters.investmentSize?.max ? parseFloat(filters.investmentSize.max) : Infinity
       const matchesSize = dealSizeNum >= minSize && dealSizeNum <= maxSize
-      return matchesSearch && matchesStatus && matchesAssetType && matchesLocation && matchesRisk && matchesSize
+      const matchesFlags = flagFilter.length === 0 || flagFilter.every((f) => deal.flags.includes(f))
+      return matchesSearch && matchesStatus && matchesAssetType && matchesLocation && matchesRisk && matchesSize && matchesFlags
     })
     filtered.sort((a, b) => {
       switch (sortBy) {
@@ -250,7 +258,7 @@ export function Deals() {
       }
     })
     setFilteredDeals(filtered)
-  }, [deals, searchTerm, filters, sortBy])
+  }, [deals, searchTerm, filters, sortBy, flagFilter])
 
   // ── Increment view count ──
   const handleViewDeal = useCallback(async (deal: Deal) => {
@@ -311,7 +319,7 @@ export function Deals() {
     const draftDeal: Omit<Deal, "id"> = {
       ...form, views: 0, likes: 0, progress: 0, investors: 0, currentRaise: "$0",
       keyMetrics: { capRate: "—", noi: "—", occupancy: "—", yearBuilt: "—" }, timeline: [],
-      status: "Active", dateAdded: new Date().toISOString().split("T")[0],
+      status: "Active", dateAdded: new Date().toISOString().split("T")[0], flags: [], tags: [],
     }
     const pipeline = runOSPipeline(draftDeal)
     setPipelineResult(pipeline)
@@ -335,6 +343,9 @@ export function Deals() {
       max_raise: form.maxRaise,
       status: pipeline.outcome === "blocked" ? "Under Review" : "Active",
       os_pipeline_result: pipeline,
+      // Seed auto-suggested flags from the OS pipeline outcome.
+      flags: suggestFlagsForDeal({ osOutcome: pipeline.outcome, status: pipeline.outcome === "blocked" ? "Under Review" : "Active" }),
+      tags: [],
     }).select().single()
 
     setIsSaving(false)
@@ -346,6 +357,18 @@ export function Deals() {
         metadata: { deal_title: form.title, pipeline_outcome: pipeline.outcome } })
     }
   }, [form]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Persist flags/tags for a deal ──
+  const handleUpdateFlagsTags = useCallback(
+    async (dealId: string, next: { flags: string[]; tags: string[] }) => {
+      setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, ...next } : d)))
+      setSelectedDeal((prev) => (prev && prev.id === dealId ? { ...prev, ...next } : prev))
+      const { error } = await supabase.from("deals").update({ flags: next.flags, tags: next.tags }).eq("id", dealId)
+      if (error) console.error("[v0] Flags/tags update error:", error.message)
+      else void logActivity({ action: "Updated deal flags/tags", category: "deals", metadata: { deal_id: dealId, flags: next.flags, tags: next.tags } })
+    },
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   // ── Color helpers ──
   const getStatusColor = (status: Deal["status"]) => {
@@ -444,6 +467,31 @@ export function Deals() {
         onClearFilters={handleClearFilters}
       />
 
+      {/* Flag filter row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-400 mr-1">Filter by flag:</span>
+        {FLAG_CATALOG.map((f) => {
+          const active = flagFilter.includes(f.id)
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFlagFilter((prev) => (active ? prev.filter((x) => x !== f.id) : [...prev, f.id]))}
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] transition-all ${
+                active ? flagBadgeClass(f.id) : "border border-slate-700 text-slate-400 hover:border-slate-500"
+              }`}
+            >
+              {getFlag(f.id)?.label}
+            </button>
+          )
+        })}
+        {flagFilter.length > 0 && (
+          <button type="button" onClick={() => setFlagFilter([])} className="text-[11px] text-slate-400 underline hover:text-white">
+            Clear
+          </button>
+        )}
+      </div>
+
       {/* Deal Grid */}
       {isLoading ? (
         <div className="flex items-center justify-center py-16">
@@ -496,6 +544,15 @@ export function Deals() {
                     <span>{deal.progress}%</span>
                   </div>
                   <Progress value={deal.progress} className="h-1.5 bg-slate-800" />
+                </div>
+                {/* Flags & tags — editing is isolated from the card's open-detail click */}
+                <div onClick={(e) => e.stopPropagation()} className="pt-1 border-t border-slate-800">
+                  <FlagTagManager
+                    flags={deal.flags}
+                    tags={deal.tags}
+                    suggestions={suggestFlagsForDeal({ osOutcome: deal.osPipelineResult?.outcome, status: deal.status })}
+                    onChange={(next) => handleUpdateFlagsTags(deal.id, next)}
+                  />
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-800">
                   <div className="flex items-center gap-3">

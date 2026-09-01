@@ -16,6 +16,8 @@ import {
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
+import { FlagTagManager } from "@/components/flag-tag-manager"
+import { suggestFlagsForMatch, FLAG_CATALOG, flagBadgeClass, getFlag } from "@/lib/flags-tags"
 import {
   type Band, type Track, type CandidateState, type Direction, type DirectionResult,
   type TriVector, type RecommendedAction, type DecisionPacket, type EvaluationInput,
@@ -50,6 +52,8 @@ interface Match {
   evaluationId: string
   decisionLog: Array<{ action: string; at: string; by: string }>
   dateMatched: string
+  flags: string[]
+  tags: string[]
 }
 
 // Friendly labels for state-transition action buttons.
@@ -126,6 +130,7 @@ export function Matchmaking() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null)
   const [filterState, setFilterState] = useState<string>("all")
+  const [flagFilter, setFlagFilter] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   // Guards against the initial load/seed running twice (React strict mode
@@ -164,6 +169,8 @@ export function Matchmaking() {
       evaluationId: (row.evaluation_id as string) ?? "",
       decisionLog: (row.decision_log as Match["decisionLog"]) ?? [],
       dateMatched: (row.date_matched as string)?.split("T")[0] ?? "",
+      flags: (row.flags as string[]) ?? [],
+      tags: (row.tags as string[]) ?? [],
     }
   }, [])
 
@@ -214,6 +221,18 @@ export function Matchmaking() {
         decision_packet: packet,
         evaluation_id: evaluationId,
         logic_version: MATCHING_LOGIC_VERSION,
+        // Auto-suggested flags derived from the evaluation signals.
+        flags: suggestFlagsForMatch({
+          candidateState: result.candidateState,
+          reasonCodes: result.reasonCodes,
+          reciprocalPass: result.reciprocalPass,
+          bands: {
+            matchFit: result.triVector.matchFit,
+            informationConfidence: result.triVector.informationConfidence,
+            executionReadiness: result.triVector.executionReadiness,
+          },
+        }),
+        tags: [],
       }
     },
     [],
@@ -286,7 +305,8 @@ export function Matchmaking() {
         (filterState === "review" && ["PRELIMINARY", "REVIEW_REQUIRED", "RETRIEVED"].includes(match.candidateState)) ||
         (filterState === "hold" && match.candidateState === "HOLD") ||
         (filterState === "declined" && ["DECLINED", "BLOCK", "EXPIRED", "INACTIVE"].includes(match.candidateState))
-      return matchesSearch && matchesState
+      const matchesFlags = flagFilter.length === 0 || flagFilter.every((f) => match.flags.includes(f))
+      return matchesSearch && matchesState && matchesFlags
     })
     // Sort by reciprocal pass, then match-fit band strength.
     filtered = filtered.sort((a, b) => {
@@ -294,7 +314,7 @@ export function Matchmaking() {
       return BAND_ORDER[b.triVector.matchFit] - BAND_ORDER[a.triVector.matchFit]
     })
     setFilteredMatches(filtered)
-  }, [matches, searchTerm, filterState])
+  }, [matches, searchTerm, filterState, flagFilter])
 
   const stats = {
     totalMatches: matches.length,
@@ -302,6 +322,18 @@ export function Matchmaking() {
     review: matches.filter((m) => ["PRELIMINARY", "REVIEW_REQUIRED", "RETRIEVED"].includes(m.candidateState)).length,
     hold: matches.filter((m) => m.candidateState === "HOLD").length,
   }
+
+  // ── Persist flags/tags for a match ──
+  const handleUpdateFlagsTags = useCallback(
+    async (matchId: string, next: { flags: string[]; tags: string[] }) => {
+      setMatches((prev) => prev.map((m) => (m.id === matchId ? { ...m, ...next } : m)))
+      setSelectedMatch((prev) => (prev && prev.id === matchId ? { ...prev, ...next } : prev))
+      const { error } = await supabase.from("matches").update({ flags: next.flags, tags: next.tags }).eq("id", matchId)
+      if (error) console.error("[v0] Match flags/tags update error:", error.message)
+      else void logActivity({ action: "Updated match flags/tags", category: "deals", metadata: { match_id: matchId, flags: next.flags, tags: next.tags } })
+    },
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   // ── Run a new match through the v1.1 engine and persist ──
   const handleRunNewMatch = useCallback(async () => {
@@ -476,6 +508,31 @@ export function Matchmaking() {
         </div>
       </div>
 
+      {/* Flag filter row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-400 mr-1">Filter by flag:</span>
+        {FLAG_CATALOG.map((f) => {
+          const active = flagFilter.includes(f.id)
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFlagFilter((prev) => (active ? prev.filter((x) => x !== f.id) : [...prev, f.id]))}
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] transition-all ${
+                active ? flagBadgeClass(f.id) : "border border-slate-600 text-slate-400 hover:border-slate-400"
+              }`}
+            >
+              {getFlag(f.id)?.label}
+            </button>
+          )
+        })}
+        {flagFilter.length > 0 && (
+          <button type="button" onClick={() => setFlagFilter([])} className="text-[11px] text-slate-400 underline hover:text-white">
+            Clear
+          </button>
+        )}
+      </div>
+
       {isLoading && (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
@@ -548,6 +605,25 @@ export function Matchmaking() {
                   )}
                 </div>
               )}
+
+              {/* Flags & tags — editing is isolated from the card's open-detail click */}
+              <div onClick={(e) => e.stopPropagation()} className="pt-3 border-t border-slate-800">
+                <FlagTagManager
+                  flags={match.flags}
+                  tags={match.tags}
+                  suggestions={suggestFlagsForMatch({
+                    candidateState: match.candidateState,
+                    reasonCodes: match.reasonCodes,
+                    reciprocalPass: match.reciprocalPass,
+                    bands: {
+                      matchFit: match.triVector.matchFit,
+                      informationConfidence: match.triVector.informationConfidence,
+                      executionReadiness: match.triVector.executionReadiness,
+                    },
+                  })}
+                  onChange={(next) => handleUpdateFlagsTags(match.id, next)}
+                />
+              </div>
             </CardContent>
           </Card>
         ))}
