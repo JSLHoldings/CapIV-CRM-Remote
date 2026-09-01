@@ -25,6 +25,8 @@ import {
 import { ProtectedRoute } from "@/components/protected-route"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { DealUploadDialog, type ExtractedDealFields } from "@/components/deal-upload-dialog"
+import { FlagTagManager } from "@/components/flag-tag-manager"
+import { suggestFlagsForDealRecord, FLAG_CATALOG, flagBadgeClass, getFlag } from "@/lib/flags-tags"
 import {
   type Deal,
   DEAL_TYPES, SOURCE_CHANNELS, DATA_CLASSIFICATIONS, TRANSACTION_PURPOSES,
@@ -71,6 +73,8 @@ const initialDeals: Deal[] = [
     sponsorRole: "sponsor",
     targetIrr: "14.2%",
     targetMoic: "1.9x",
+    flags: ["priority", "hot_lead"],
+    tags: ["Sunbelt", "Value-Add", "Q2 Target"],
   },
   {
     id: 2,
@@ -97,6 +101,8 @@ const initialDeals: Deal[] = [
     sponsorRole: "sponsor",
     targetIrr: "12.8%",
     targetMoic: "1.7x",
+    flags: ["needs_review", "watchlist"],
+    tags: ["CBD Office", "Reposition"],
   },
   {
     id: 3,
@@ -123,6 +129,8 @@ const initialDeals: Deal[] = [
     sponsorRole: "sponsor",
     targetIrr: "16.1%",
     targetMoic: "2.1x",
+    flags: ["verified"],
+    tags: ["Grocery-Anchored", "Stabilized"],
   },
 ]
 
@@ -432,17 +440,26 @@ export default function DealsPage() {
   const [prefilledFromUpload, setPrefilledFromUpload] = useState(false)
   const [newDeal, setNewDeal] = useState<Omit<Deal, "id">>(createEmptyDeal())
   const [interestedDeals, setInterestedDeals] = useState<number[]>([])
+  const [flagFilter, setFlagFilter] = useState<string[]>([])
+
+  // Update flags/tags for a deal (in-memory to match this page's data model).
+  const handleUpdateFlagsTags = (dealId: number, next: { flags: string[]; tags: string[] }) => {
+    setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, ...next } : d)))
+    setSelectedDeal((prev) => (prev && prev.id === dealId ? { ...prev, ...next } : prev))
+  }
 
   const filteredDeals = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
-    if (!term) {
-      return deals
-    }
     return deals.filter((deal) => {
-      const haystack = `${deal.name} ${deal.referenceCode} ${deal.geography} ${deal.assetClass} ${dealTypeLabel(deal.dealTypePrimary)} ${lifecycleLabel(deal.lifecycleState)} ${deal.sponsor}`.toLowerCase()
-      return haystack.includes(term)
+      const matchesSearch =
+        !term ||
+        `${deal.name} ${deal.referenceCode} ${deal.geography} ${deal.assetClass} ${dealTypeLabel(deal.dealTypePrimary)} ${lifecycleLabel(deal.lifecycleState)} ${deal.sponsor}`
+          .toLowerCase()
+          .includes(term)
+      const matchesFlags = flagFilter.length === 0 || flagFilter.every((f) => (deal.flags ?? []).includes(f))
+      return matchesSearch && matchesFlags
     })
-  }, [deals, searchTerm])
+  }, [deals, searchTerm, flagFilter])
   const selectedDealAnalysis = selectedDeal ? generatePreAnalysis(selectedDeal) : null
 
   const updateNewDeal = <K extends keyof Omit<Deal, "id">>(field: K, value: Omit<Deal, "id">[K]) => {
@@ -837,6 +854,29 @@ export default function DealsPage() {
             <p className="mt-3 text-xs uppercase tracking-[0.28em] text-slate-500">
               {filteredDeals.length} opportunities
             </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-400 mr-1">Filter by flag:</span>
+              {FLAG_CATALOG.map((f) => {
+                const active = flagFilter.includes(f.id)
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFlagFilter((prev) => (active ? prev.filter((x) => x !== f.id) : [...prev, f.id]))}
+                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] transition-all ${
+                      active ? flagBadgeClass(f.id) : "border border-slate-700 text-slate-400 hover:border-slate-500"
+                    }`}
+                  >
+                    {getFlag(f.id)?.label}
+                  </button>
+                )
+              })}
+              {flagFilter.length > 0 && (
+                <button type="button" onClick={() => setFlagFilter([])} className="text-[11px] text-slate-400 underline hover:text-white">
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -956,6 +996,19 @@ export default function DealsPage() {
                         </div>
                       )
                     })()}
+
+                    {/* Flags & tags — editing isolated from the card's open-detail click */}
+                    <div onClick={(event) => event.stopPropagation()} className="pt-3 border-t border-slate-800">
+                      <FlagTagManager
+                        flags={deal.flags ?? []}
+                        tags={deal.tags ?? []}
+                        suggestions={suggestFlagsForDealRecord({
+                          lifecycleState: deal.lifecycleState,
+                          dataClassification: deal.dataClassification,
+                        })}
+                        onChange={(next) => handleUpdateFlagsTags(deal.id, next)}
+                      />
+                    </div>
 
                     <div className="pt-2">
                       <Button
