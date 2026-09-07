@@ -99,7 +99,7 @@ function confidenceColor(score: number) {
 // ── Fake extraction progress messages ─────────────────────────────────────────
 const PROGRESS_STEPS = [
   { pct: 10, msg: "Uploading document..." },
-  { pct: 30, msg: "Processing with JSL Tech AI..." },
+  { pct: 30, msg: "Reading document text..." },
   { pct: 55, msg: "Extracting deal fields..." },
   { pct: 75, msg: "Identifying sponsor & location..." },
   { pct: 90, msg: "Structuring financial data..." },
@@ -244,7 +244,7 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
           </DialogTitle>
           <p className="text-sm text-slate-400 mt-1">
             Upload an Executive Summary, Offering Memorandum, Term Sheet, or Investment Deck.
-            JSL Tech AI will extract and pre-populate the deal form.
+            We&apos;ll read the document and pre-populate the deal form for you to review.
           </p>
         </DialogHeader>
 
@@ -367,7 +367,7 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
           </div>
         )}
 
-        {/* ── Step: Review ─────────────────────────────────────────────────── */}
+        {/* ── Step: Review ────────────���────────────────────────────────────── */}
         {step === "review" && editedFields && extracted && (
           <div className="space-y-5 pt-2">
             {/* Header info */}
@@ -522,7 +522,7 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
 
               {/* Description */}
               <div className="col-span-2 space-y-1.5">
-                <Label className="text-slate-300 text-xs">Description (AI generated)</Label>
+                <Label className="text-slate-300 text-xs">Description (auto-extracted)</Label>
                 <Textarea value={editedFields.description} onChange={(e) => updateField("description", e.target.value)}
                   rows={3} className="bg-slate-900 border-slate-700 text-white text-sm resize-none" />
               </div>

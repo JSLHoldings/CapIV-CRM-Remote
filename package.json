@@ -51,6 +51,7 @@
     "geist": "latest",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
+    "mammoth": "^1.12.2",
     "next": "^16.0.0",
     "next-themes": "latest",
     "react": "^19",
@@ -62,6 +63,7 @@
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
+    "unpdf": "^1.8.1",
     "vaul": "^0.9.9",
     "zod": "3.25.76"
   },
