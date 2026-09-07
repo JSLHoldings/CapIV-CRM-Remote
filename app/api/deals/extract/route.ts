@@ -141,8 +141,27 @@ Document filename: ${file.name}`,
     })
   } catch (error) {
     console.error('[deals/extract] Error:', error)
+
+    // Surface actionable messages instead of a generic failure.
+    const raw = error instanceof Error ? error.message : String(error)
+    const statusCode =
+      typeof error === 'object' && error !== null && 'statusCode' in error
+        ? (error as { statusCode?: number }).statusCode
+        : undefined
+
+    // AI Gateway billing gate — the team must add a credit card to unlock credits.
+    if (raw.includes('valid credit card') || raw.includes('customer_verification_required') || statusCode === 403) {
+      return NextResponse.json(
+        {
+          error:
+            'AI document extraction is unavailable: the Vercel AI Gateway for this project needs a valid credit card on file to unlock its free credits. Add one in Vercel (AI Gateway settings), or use "Add Deal" to enter the deal manually — it will still be saved.',
+        },
+        { status: 402 }
+      )
+    }
+
     return NextResponse.json(
-      { error: 'Extraction failed. Please check your document and try again.' },
+      { error: `Extraction failed: ${raw || 'Please check your document and try again.'}` },
       { status: 500 }
     )
   }

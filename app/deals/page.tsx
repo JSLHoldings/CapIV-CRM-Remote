@@ -1,7 +1,10 @@
 "use client"
 
-import { FormEvent, useMemo, useState } from "react"
+import { FormEvent, useMemo, useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/hooks/use-auth"
+import { logActivity } from "@/lib/activity"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -409,6 +412,10 @@ ${xrefOffset}
 export default function DealsPage() {
   const { toast } = useToast()
   const router = useRouter()
+  const { user } = useAuth()
+  const supabase = useMemo(() => createClient(), [])
+  // client_id -> persistence metadata for deals backed by the sourced_deals table.
+  const persistedRef = useRef<Map<number, { rowId: string; owned: boolean }>>(new Map())
   const createEmptyDeal = (): Omit<Deal, "id"> => ({
     referenceCode: generateReferenceCode(),
     dealTypePrimary: "RE_DIRECT",
@@ -443,10 +450,50 @@ export default function DealsPage() {
   const [interestedDeals, setInterestedDeals] = useState<number[]>([])
   const [flagFilter, setFlagFilter] = useState<string[]>([])
 
-  // Update flags/tags for a deal (in-memory to match this page's data model).
-  const handleUpdateFlagsTags = (dealId: number, next: { flags: string[]; tags: string[] }) => {
+  // Load persisted deals (incl. AI-imported ones) and merge with the display seed.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from("sourced_deals")
+        .select("id, client_id, user_id, data")
+        .order("created_at", { ascending: true })
+      if (error) {
+        console.error("[v0] load sourced deals error:", error.message)
+        return
+      }
+      if (cancelled || !data) return
+      const loaded: Deal[] = []
+      for (const row of data) {
+        persistedRef.current.set(row.client_id as number, {
+          rowId: row.id as string,
+          owned: row.user_id === user.id,
+        })
+        loaded.push(row.data as Deal)
+      }
+      setDeals([...initialDeals, ...loaded])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user, supabase])
+
+  // Update flags/tags for a deal; persist to the DB when the deal is owned.
+  const handleUpdateFlagsTags = async (dealId: number, next: { flags: string[]; tags: string[] }) => {
+    const current = deals.find((d) => d.id === dealId)
+    const updatedDeal = current ? { ...current, ...next } : undefined
     setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, ...next } : d)))
     setSelectedDeal((prev) => (prev && prev.id === dealId ? { ...prev, ...next } : prev))
+
+    const meta = persistedRef.current.get(dealId)
+    if (user && meta?.owned && updatedDeal) {
+      const { error } = await supabase
+        .from("sourced_deals")
+        .update({ data: updatedDeal, updated_at: new Date().toISOString() })
+        .eq("id", meta.rowId)
+      if (error) console.error("[v0] update deal flags/tags error:", error.message)
+    }
   }
 
   const filteredDeals = useMemo(() => {
@@ -467,19 +514,51 @@ export default function DealsPage() {
     setNewDeal((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleAddDeal = (event: FormEvent<HTMLFormElement>) => {
+  const handleAddDeal = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const clientId = Date.now()
     const dealToAdd: Deal = {
       ...newDeal,
-      id: Date.now(),
+      id: clientId,
     }
     setDeals((prev) => [...prev, dealToAdd])
-    toast({
-      title: "Deal added",
-      description: `${dealToAdd.name} is now visible in Live Opportunities.`,
-    })
     setIsAddDialogOpen(false)
     setNewDeal(createEmptyDeal())
+    setPrefilledFromUpload(false)
+
+    if (user) {
+      const { data, error } = await supabase
+        .from("sourced_deals")
+        .insert({
+          user_id: user.id,
+          client_id: clientId,
+          name: dealToAdd.name,
+          reference_code: dealToAdd.referenceCode,
+          data: dealToAdd,
+        })
+        .select("id")
+        .single()
+      if (error || !data) {
+        console.error("[v0] persist deal error:", error?.message)
+        toast({
+          title: "Saved for this session only",
+          description: "We couldn't save this deal to the server. It will disappear on reload.",
+          variant: "destructive",
+        })
+        return
+      }
+      persistedRef.current.set(clientId, { rowId: data.id as string, owned: true })
+      void logActivity({
+        action: "Created sourced deal",
+        category: "deals",
+        metadata: { deal_id: clientId, name: dealToAdd.name, reference_code: dealToAdd.referenceCode },
+      })
+    }
+
+    toast({
+      title: "Deal added",
+      description: `${dealToAdd.name} is now saved and visible in Live Opportunities.`,
+    })
   }
 
   const handleAddDialogChange = (open: boolean) => {
