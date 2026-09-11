@@ -13,8 +13,10 @@ import { useToast } from "@/components/ui/use-toast"
 import {
   Upload, FileText, FileImage, CheckCircle2, AlertCircle,
   Loader2, X, Pencil, ArrowRight, Sparkles, RefreshCw,
+  ClipboardList, ChevronDown, HelpCircle, Circle,
 } from "lucide-react"
 import { DEAL_TYPES, TRANSACTION_PURPOSES, REQUEST_TYPES } from "@/lib/deal-schema"
+import type { IntakeReport } from "@/lib/deal-text-parser"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -49,6 +51,7 @@ export interface ExtractedDealFields {
   documentType: string
   confidence: number
   missingFields: string[]
+  intakeReport: IntakeReport
 }
 
 interface DealUploadDialogProps {
@@ -94,6 +97,18 @@ function confidenceColor(score: number) {
   if (level === "high") return "text-emerald-300 border-emerald-500/30 bg-emerald-500/10"
   if (level === "medium") return "text-amber-300 border-amber-500/30 bg-amber-500/10"
   return "text-rose-300 border-rose-500/30 bg-rose-500/10"
+}
+
+function fieldStatusIcon(status: "found" | "missing" | "uncertain") {
+  if (status === "found") return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+  if (status === "uncertain") return <HelpCircle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+  return <Circle className="h-3.5 w-3.5 text-rose-400/80 flex-shrink-0 mt-0.5" />
+}
+
+function fieldStatusLabel(status: "found" | "missing" | "uncertain") {
+  if (status === "found") return "text-emerald-300"
+  if (status === "uncertain") return "text-amber-300"
+  return "text-rose-300"
 }
 
 // ── Fake extraction progress messages ─────────────────────────────────────────
@@ -408,13 +423,8 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
               <span>{CONFIDENCE_LABELS[confidenceLevel(extracted.confidence)]}</span>
             </div>
 
-            {/* Missing fields warning */}
-            {extracted.missingFields.length > 0 && (
-              <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/10">
-                <p className="text-xs text-amber-300 font-medium mb-1">Fields not found in document:</p>
-                <p className="text-xs text-amber-200/70">{extracted.missingFields.join(", ")}</p>
-              </div>
-            )}
+            {/* Intake report — why fields are missing or the score is low */}
+            <IntakeReportPanel report={extracted.intakeReport} />
 
             {/* Editable fields */}
             <div className="space-y-1 text-xs text-slate-400 flex items-center gap-1.5">
@@ -625,5 +635,89 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ── Intake Report ────────────────────────────────────────────────────────────
+// Explains *why* the score landed where it did and *why* specific fields are
+// missing/uncertain, so a reviewer knows exactly what to check in the source
+// document rather than just that something is incomplete.
+
+function IntakeReportPanel({ report }: { report: IntakeReport }) {
+  const [expanded, setExpanded] = useState(false)
+  const flagged = report.fields.filter((f) => f.status !== "found")
+  const foundCount = report.fields.length - flagged.length
+
+  if (flagged.length === 0) {
+    return (
+      <div className="flex items-start gap-2.5 p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
+        <ClipboardList className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+        <div className="text-xs text-emerald-200/90">
+          <p className="font-medium text-emerald-300">Intake report: all fields matched</p>
+          <p className="text-emerald-200/70 mt-0.5">{report.scoreReasons[0]}</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between gap-3 p-3 text-left"
+      >
+        <div className="flex items-start gap-2.5">
+          <ClipboardList className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-medium text-white">
+              Intake report — why the score is {report.score}%
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {foundCount} of {report.fields.length} fields matched · {flagged.length} need review
+            </p>
+          </div>
+        </div>
+        <ChevronDown className={`h-4 w-4 text-slate-500 flex-shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+
+      {expanded && (
+        <div className="border-t border-slate-800 p-3 space-y-4">
+          {/* Score-level reasons */}
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-slate-300 uppercase tracking-wider">Why the score is {report.score}%</p>
+            <ul className="space-y-1.5">
+              {report.scoreReasons.map((reason, i) => (
+                <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
+                  <span className="mt-1.5 h-1 w-1 rounded-full bg-slate-500 flex-shrink-0" />
+                  <span>{reason}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-slate-500 pt-0.5">
+              Extracted {report.documentStats.words.toLocaleString()} words ({report.documentStats.characters.toLocaleString()} characters) of document text.
+            </p>
+          </div>
+
+          {/* Per-field diagnostics */}
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-slate-300 uppercase tracking-wider">Field-by-field reasons</p>
+            <ul className="space-y-2">
+              {flagged.map((f) => (
+                <li key={f.field} className="flex items-start gap-2">
+                  {fieldStatusIcon(f.status)}
+                  <div className="min-w-0">
+                    <p className={`text-xs font-medium ${fieldStatusLabel(f.status)}`}>
+                      {f.label} — {f.status === "uncertain" ? "low confidence" : "not found"}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">{f.reason}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

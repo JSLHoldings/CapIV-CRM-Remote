@@ -1,8 +1,14 @@
 import { put } from '@vercel/blob'
 import { type NextRequest, NextResponse } from 'next/server'
-import { extractTextFromFile, parseDealFromText, type DealExtractionResult } from '@/lib/deal-text-parser'
+import {
+  extractTextFromFile,
+  parseDealFromText,
+  type DealExtractionResult,
+  type IntakeReport,
+  type FieldDiagnostic,
+} from '@/lib/deal-text-parser'
 
-export type { DealExtractionResult }
+export type { DealExtractionResult, IntakeReport, FieldDiagnostic }
 
 const ALLOWED_TYPES = [
   'application/pdf',

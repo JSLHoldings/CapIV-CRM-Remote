@@ -36,6 +36,27 @@ export interface DealExtractionResult {
   documentType: "Executive Summary" | "Offering Memorandum" | "Term Sheet" | "Investment Deck" | "Other"
   confidence: number
   missingFields: string[]
+  intakeReport: IntakeReport
+}
+
+// ── Intake report ────────────────────────────────────────────────────────────
+// Explains *why* a field is missing/uncertain and *why* the overall score
+// landed where it did, so a reviewer knows what to check rather than just
+// that something is wrong.
+
+export interface FieldDiagnostic {
+  field: string
+  label: string
+  status: "found" | "missing" | "uncertain"
+  reason: string
+}
+
+export interface IntakeReport {
+  score: number
+  scoreLabel: "high" | "medium" | "low"
+  scoreReasons: string[]
+  fields: FieldDiagnostic[]
+  documentStats: { characters: number; words: number; pages: string }
 }
 
 const EMPTY = "—"
@@ -336,9 +357,13 @@ export function parseDealFromText(rawText: string, filename: string): DealExtrac
     return EMPTY
   })()
 
+  const titleVal = detectTitle(text, filename)
+  const sponsorVal = detectSponsor(text).replace(/^(sponsor|sponsored by|general partner|gp|manager|managed by|issuer|presented by|prepared by)\s+/i, "")
+  const usedFilenameTitle = titleVal === cleanFilename(filename)
+
   const result: DealExtractionResult = {
-    title: detectTitle(text, filename),
-    sponsor: detectSponsor(text).replace(/^(sponsor|sponsored by|general partner|gp|manager|managed by|issuer|presented by|prepared by)\s+/i, ""),
+    title: titleVal,
+    sponsor: sponsorVal,
     location: detectLocation(text),
     assetType: detectAssetType(lower),
     dealTypePrimary: detectDealType(lower),
@@ -361,9 +386,45 @@ export function parseDealFromText(rawText: string, filename: string): DealExtrac
     documentType: detectDocumentType(lower, filename),
     confidence: 0,
     missingFields: [],
+    intakeReport: { score: 0, scoreLabel: "low", scoreReasons: [], fields: [], documentStats: { characters: 0, words: 0, pages: "—" } },
   }
 
-  // Confidence + missing-field report based on how much we recovered.
+  // ── Per-field diagnostics: why a field is missing or only weakly recovered ──
+  // Each reason names the specific pattern/keyword set the parser looked for,
+  // so a reviewer knows what to check in the source document.
+  const REASONS: Record<string, string> = {
+    title:
+      "No labeled \"Project/Deal Name\" field, no distinctively-named entity (e.g. \"X, LLC\"), and no property-style headline (e.g. \"X Apartments\", \"X Plaza\") appeared in the first part of the document.",
+    sponsor:
+      "No \"Sponsor:\" / \"General Partner:\" / \"Issuer:\" label was found, and no nearby company name ending in a recognized suffix (LLC, LP, Capital, Partners, Group, Realty, Holdings) could be matched.",
+    location:
+      "No \"City, ST\" pattern (e.g. \"Austin, TX\") was found anywhere in the document text.",
+    dealSize:
+      "No dollar amount appeared within ~80 characters of size-related keywords (\"total capitalization\", \"purchase price\", \"total raise\", \"transaction size\", \"total investment\").",
+    maxRaise:
+      "No dollar amount appeared near raise-related keywords (\"equity raise\", \"maximum raise\", \"capital raise\", \"offering amount\", \"target raise\").",
+    minimumInvestment:
+      "No dollar amount appeared near \"minimum investment\", \"minimum commitment\", or \"minimum subscription\".",
+    targetReturn:
+      "No percentage value was found adjacent to \"IRR\" (e.g. \"18% IRR\" or \"IRR of 15–20%\").",
+    targetMoic:
+      "No \"#.#x\" multiple was found near \"equity multiple\", \"MOIC\", or \"multiple\".",
+    holdPeriod:
+      "No \"# year(s)\" phrase was found near \"hold\", \"holding period\", \"term\", or \"investment period\".",
+    capRate:
+      "No percentage value was found near \"cap rate\" or \"going-in cap\".",
+    noi:
+      "No dollar amount was found near \"net operating income\" or \"NOI\".",
+    occupancy:
+      "No percentage value was found near \"occupancy\", \"occupied\", or \"leased\".",
+    yearBuilt:
+      "No 4-digit year was found near \"built\", \"constructed\", \"vintage\", \"delivered\", or \"completed\".",
+    useOfProceeds:
+      "No \"Use of Proceeds:\" labeled field was found in the document text.",
+    description:
+      "No paragraph of at least 100 characters with normal sentence punctuation was found to summarize — the document may be mostly tables, bullet fragments, or a cover page.",
+  }
+
   const scored: Array<[keyof DealExtractionResult, string]> = [
     ["title", "Title"],
     ["sponsor", "Sponsor"],
@@ -381,15 +442,75 @@ export function parseDealFromText(rawText: string, filename: string): DealExtrac
     ["useOfProceeds", "Use of Proceeds"],
     ["description", "Description"],
   ]
+
+  const fieldDiagnostics: FieldDiagnostic[] = []
   const missing: string[] = []
   let found = 0
-  for (const [key, label] of scored) {
+  for (const [key, fieldLabel] of scored) {
     const val = result[key]
-    if (val === EMPTY || val === "" || (key === "title" && val === "Untitled Deal")) missing.push(label)
-    else found++
+    const isMissingTitle = key === "title" && val === "Untitled Deal"
+    const isMissing = val === EMPTY || val === "" || isMissingTitle
+    const isWeakTitle = key === "title" && usedFilenameTitle && !isMissingTitle
+
+    if (isMissing) {
+      missing.push(fieldLabel)
+      fieldDiagnostics.push({ field: key, label: fieldLabel, status: "missing", reason: REASONS[key] ?? "This field could not be located in the document text." })
+    } else {
+      found++
+      if (isWeakTitle) {
+        fieldDiagnostics.push({
+          field: key,
+          label: fieldLabel,
+          status: "uncertain",
+          reason: "No title-like text was found in the document body, so the deal name was derived from the filename instead.",
+        })
+      } else {
+        fieldDiagnostics.push({ field: key, label: fieldLabel, status: "found", reason: "Matched in document text." })
+      }
+    }
   }
+
   result.missingFields = missing
   result.confidence = rawText.trim().length === 0 ? 0 : Math.round((found / scored.length) * 100)
+
+  // ── Score-level reasons: category rollups explaining the overall number ──
+  const identityMissing = ["Title", "Sponsor", "Location"].filter((l) => missing.includes(l))
+  const financialsMissing = ["Deal Size", "Max Raise", "Minimum Investment", "NOI", "Cap Rate"].filter((l) => missing.includes(l))
+  const termsMissing = ["Target Return", "Target MOIC", "Hold Period"].filter((l) => missing.includes(l))
+
+  const scoreReasons: string[] = []
+  const words = rawText.trim().split(/\s+/).filter(Boolean)
+  if (rawText.trim().length === 0) {
+    scoreReasons.push("No text could be extracted from this file at all — it is likely a scanned image or a document with no embedded text layer.")
+  } else if (words.length < 120) {
+    scoreReasons.push(`Only ${words.length} words of text were extracted — a short document limits how many fields have enough surrounding context to match.`)
+  }
+  if (identityMissing.length > 0) {
+    scoreReasons.push(`Deal identity fields (${identityMissing.join(", ")}) are missing — the document may lack a cover page or use non-standard labels for these.`)
+  }
+  if (financialsMissing.length >= 3) {
+    scoreReasons.push(`Most financial metrics (${financialsMissing.join(", ")}) were not found — this document may not include a detailed financials or capitalization section.`)
+  } else if (financialsMissing.length > 0) {
+    scoreReasons.push(`Some financial metrics (${financialsMissing.join(", ")}) were not found near their usual keywords.`)
+  }
+  if (termsMissing.length >= 2) {
+    scoreReasons.push(`Return/term fields (${termsMissing.join(", ")}) are missing — the document may not state target IRR, MOIC, or hold period explicitly.`)
+  }
+  if (missing.length === 0) {
+    scoreReasons.push("All tracked fields were matched in the document text.")
+  } else if (scoreReasons.length === 0) {
+    scoreReasons.push(`${missing.length} of ${scored.length} fields (${missing.join(", ")}) had no matching text nearby.`)
+  }
+
+  const scoreLabel: IntakeReport["scoreLabel"] = result.confidence >= 75 ? "high" : result.confidence >= 45 ? "medium" : "low"
+
+  result.intakeReport = {
+    score: result.confidence,
+    scoreLabel,
+    scoreReasons,
+    fields: fieldDiagnostics,
+    documentStats: { characters: rawText.length, words: words.length, pages: EMPTY },
+  }
 
   return result
 }
