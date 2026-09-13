@@ -13,10 +13,12 @@ import { useToast } from "@/components/ui/use-toast"
 import {
   Upload, FileText, FileImage, CheckCircle2, AlertCircle,
   Loader2, X, Pencil, ArrowRight, Sparkles, RefreshCw,
-  ClipboardList, ChevronDown, HelpCircle, Circle,
+  ClipboardList, ChevronDown, HelpCircle, Circle, Download,
+  Lightbulb,
 } from "lucide-react"
 import { DEAL_TYPES, TRANSACTION_PURPOSES, REQUEST_TYPES } from "@/lib/deal-schema"
 import type { IntakeReport } from "@/lib/deal-text-parser"
+import { downloadIntakeReportPdf } from "@/lib/intake-report-pdf"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -424,7 +426,11 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
             </div>
 
             {/* Intake report — why fields are missing or the score is low */}
-            <IntakeReportPanel report={extracted.intakeReport} />
+            <IntakeReportPanel
+              report={extracted.intakeReport}
+              dealName={editedFields.title}
+              filename={selectedFile?.name ?? "document"}
+            />
 
             {/* Editable fields */}
             <div className="space-y-1 text-xs text-slate-400 flex items-center gap-1.5">
@@ -643,33 +649,59 @@ export function DealUploadDialog({ open, onOpenChange, onPopulateForm }: DealUpl
 // missing/uncertain, so a reviewer knows exactly what to check in the source
 // document rather than just that something is incomplete.
 
-function IntakeReportPanel({ report }: { report: IntakeReport }) {
+function impactBadgeClass(impact: "high" | "medium" | "low") {
+  if (impact === "high") return "text-rose-300 border-rose-500/30 bg-rose-500/10"
+  if (impact === "medium") return "text-amber-300 border-amber-500/30 bg-amber-500/10"
+  return "text-slate-400 border-slate-700 bg-slate-800/50"
+}
+
+function IntakeReportPanel({
+  report,
+  dealName,
+  filename,
+}: {
+  report: IntakeReport
+  dealName: string
+  filename: string
+}) {
   const [expanded, setExpanded] = useState(false)
   const flagged = report.fields.filter((f) => f.status !== "found")
   const foundCount = report.fields.length - flagged.length
+  const allMatched = flagged.length === 0
 
-  if (flagged.length === 0) {
+  const handleDownload = () => downloadIntakeReportPdf(report, dealName, filename)
+
+  if (allMatched) {
     return (
       <div className="flex items-start gap-2.5 p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
         <ClipboardList className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-        <div className="text-xs text-emerald-200/90">
+        <div className="text-xs text-emerald-200/90 flex-1">
           <p className="font-medium text-emerald-300">Intake report: all fields matched</p>
           <p className="text-emerald-200/70 mt-0.5">{report.scoreReasons[0]}</p>
         </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 h-7 px-2 flex-shrink-0"
+          onClick={handleDownload}
+        >
+          <Download className="h-3.5 w-3.5 mr-1.5" />
+          PDF
+        </Button>
       </div>
     )
   }
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between gap-3 p-3 text-left"
-      >
-        <div className="flex items-start gap-2.5">
+      <div className="w-full flex items-center justify-between gap-3 p-3">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex-1 flex items-start gap-2.5 text-left min-w-0"
+        >
           <ClipboardList className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-medium text-white">
               Intake report — why the score is {report.score}%
             </p>
@@ -677,9 +709,22 @@ function IntakeReportPanel({ report }: { report: IntakeReport }) {
               {foundCount} of {report.fields.length} fields matched · {flagged.length} need review
             </p>
           </div>
+        </button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-slate-400 hover:text-white h-7 px-2"
+            onClick={handleDownload}
+          >
+            <Download className="h-3.5 w-3.5 mr-1.5" />
+            PDF
+          </Button>
+          <button type="button" onClick={() => setExpanded((v) => !v)} className="p-1">
+            <ChevronDown className={`h-4 w-4 text-slate-500 flex-shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </button>
         </div>
-        <ChevronDown className={`h-4 w-4 text-slate-500 flex-shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
-      </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-slate-800 p-3 space-y-4">
@@ -697,6 +742,27 @@ function IntakeReportPanel({ report }: { report: IntakeReport }) {
             <p className="text-xs text-slate-500 pt-0.5">
               Extracted {report.documentStats.words.toLocaleString()} words ({report.documentStats.characters.toLocaleString()} characters) of document text.
             </p>
+          </div>
+
+          {/* How to improve the score */}
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-slate-300 uppercase tracking-wider">How to improve this score</p>
+            <ul className="space-y-2.5">
+              {report.improvements.map((action, i) => (
+                <li key={i} className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 p-2.5">
+                  <Lightbulb className="h-3.5 w-3.5 text-blue-400 flex-shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs font-medium text-white">{action.title}</p>
+                      <Badge className={`text-[10px] border px-1.5 py-0 ${impactBadgeClass(action.impact)}`}>
+                        {action.impact} impact
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">{action.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
 
           {/* Per-field diagnostics */}

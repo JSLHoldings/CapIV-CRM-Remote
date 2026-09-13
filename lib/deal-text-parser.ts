@@ -51,12 +51,19 @@ export interface FieldDiagnostic {
   reason: string
 }
 
+export interface ImprovementAction {
+  title: string
+  detail: string
+  impact: "high" | "medium" | "low"
+}
+
 export interface IntakeReport {
   score: number
   scoreLabel: "high" | "medium" | "low"
   scoreReasons: string[]
   fields: FieldDiagnostic[]
   documentStats: { characters: number; words: number; pages: string }
+  improvements: ImprovementAction[]
 }
 
 const EMPTY = "—"
@@ -386,7 +393,7 @@ export function parseDealFromText(rawText: string, filename: string): DealExtrac
     documentType: detectDocumentType(lower, filename),
     confidence: 0,
     missingFields: [],
-    intakeReport: { score: 0, scoreLabel: "low", scoreReasons: [], fields: [], documentStats: { characters: 0, words: 0, pages: "—" } },
+    intakeReport: { score: 0, scoreLabel: "low", scoreReasons: [], fields: [], documentStats: { characters: 0, words: 0, pages: "—" }, improvements: [] },
   }
 
   // ── Per-field diagnostics: why a field is missing or only weakly recovered ──
@@ -504,12 +511,80 @@ export function parseDealFromText(rawText: string, filename: string): DealExtrac
 
   const scoreLabel: IntakeReport["scoreLabel"] = result.confidence >= 75 ? "high" : result.confidence >= 45 ? "medium" : "low"
 
+  // ── How to improve the score: concrete, actionable next steps ──────────────
+  // Ranked so the highest-leverage fix (usually the document itself) leads.
+  const improvements: ImprovementAction[] = []
+
+  if (rawText.trim().length === 0) {
+    improvements.push({
+      title: "Upload a text-based document instead of a scanned image",
+      detail: "This file has no extractable text layer, so nothing could be read. Export the source as a native PDF or DOCX (not a scan or photo) and re-upload.",
+      impact: "high",
+    })
+  } else if (words.length < 120) {
+    improvements.push({
+      title: "Upload a more complete document",
+      detail: `Only ${words.length} words were extracted. A 1-page teaser rarely has enough detail — an Executive Summary or Offering Memorandum with a financials section will surface far more fields.`,
+      impact: "high",
+    })
+  }
+
+  if (identityMissing.length > 0) {
+    improvements.push({
+      title: `Add a clear cover page with ${identityMissing.join(", ")}`,
+      detail: "Deal name, sponsor, and location are usually the easiest fields to fix: state them plainly near the top, e.g. \"Project: Streamside\", \"Sponsor: Acme Capital LLC\", \"Location: Austin, TX\".",
+      impact: "high",
+    })
+  }
+
+  if (financialsMissing.length > 0) {
+    improvements.push({
+      title: `Include a financials section covering ${financialsMissing.join(", ")}`,
+      detail: "Label each figure explicitly (e.g. \"Total Capitalization: $12.5M\", \"Net Operating Income: $850K\") rather than presenting them only in an unlabeled table or chart, which the parser cannot read.",
+      impact: financialsMissing.length >= 3 ? "high" : "medium",
+    })
+  }
+
+  if (termsMissing.length > 0) {
+    improvements.push({
+      title: `State return terms explicitly (${termsMissing.join(", ")})`,
+      detail: "Spell out target IRR, equity multiple (MOIC), and hold period in a sentence or terms table, e.g. \"Target IRR: 18–22% | 2.1x MOIC | 5-year hold\".",
+      impact: "medium",
+    })
+  }
+
+  const uncertainFields = fieldDiagnostics.filter((f) => f.status === "uncertain")
+  if (uncertainFields.length > 0) {
+    improvements.push({
+      title: `Verify ${uncertainFields.map((f) => f.label).join(", ")} before submitting`,
+      detail: "These fields were filled in with a low-confidence fallback rather than matched directly in the text — double-check them in the form below.",
+      impact: "medium",
+    })
+  }
+
+  if (missing.includes("Description")) {
+    improvements.push({
+      title: "Add a narrative overview paragraph",
+      detail: "Include at least one full paragraph (3-4 sentences) describing the opportunity in plain prose — bullet-only decks and tables don't give the parser a summary to extract.",
+      impact: "low",
+    })
+  }
+
+  if (improvements.length === 0) {
+    improvements.push({
+      title: "No changes needed",
+      detail: "All tracked fields were matched directly in the document text.",
+      impact: "low",
+    })
+  }
+
   result.intakeReport = {
     score: result.confidence,
     scoreLabel,
     scoreReasons,
     fields: fieldDiagnostics,
     documentStats: { characters: rawText.length, words: words.length, pages: EMPTY },
+    improvements,
   }
 
   return result
