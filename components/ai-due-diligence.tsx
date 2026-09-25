@@ -48,6 +48,7 @@ interface UploadedDocument {
   analysis?: DocumentAnalysis
   analysisModel?: AnalysisModel
   error?: string
+  errorCode?: string
 }
 
 interface DocumentAnalysis {
@@ -237,12 +238,16 @@ export function AIDueDiligence() {
         }),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Analysis failed")
+        const err = new Error(data.error || "Analysis failed") as Error & {
+          code?: string
+        }
+        err.code = typeof data.code === "string" ? data.code : undefined
+        throw err
       }
 
-      const data = await response.json()
       setDocuments((prev) =>
         prev.map((d) =>
           d.id === docId
@@ -251,6 +256,8 @@ export function AIDueDiligence() {
                 status: "analyzed",
                 analysis: data.analysis,
                 analysisModel: data.model ?? analysisModel,
+                error: undefined,
+                errorCode: undefined,
               }
             : d
         )
@@ -263,6 +270,10 @@ export function AIDueDiligence() {
         }`,
       })
     } catch (error) {
+      const code =
+        error instanceof Error && "code" in error
+          ? (error as Error & { code?: string }).code
+          : undefined
       setDocuments((prev) =>
         prev.map((d) =>
           d.id === docId
@@ -271,12 +282,13 @@ export function AIDueDiligence() {
                 status: "error",
                 error:
                   error instanceof Error ? error.message : "Analysis failed",
+                errorCode: code,
               }
             : d
         )
       )
       toast({
-        title: "Analysis failed",
+        title: code === "billing_required" ? "AI Gateway billing required" : "Analysis failed",
         description: error instanceof Error ? error.message : "Please try again",
         variant: "destructive",
       })
@@ -450,6 +462,36 @@ export function AIDueDiligence() {
                     )}
                   </div>
                 </div>
+
+                {doc.status === "error" && doc.error && (
+                  <div
+                    className={`mt-3 flex gap-3 rounded-lg border p-3 ${
+                      doc.errorCode === "billing_required"
+                        ? "border-amber-500/30 bg-amber-500/10"
+                        : "border-red-500/30 bg-red-500/10"
+                    }`}
+                  >
+                    <AlertCircle
+                      className={`h-4 w-4 flex-shrink-0 ${
+                        doc.errorCode === "billing_required" ? "text-amber-400" : "text-red-400"
+                      }`}
+                    />
+                    <div className="space-y-1">
+                      {doc.errorCode === "billing_required" && (
+                        <p className="text-sm font-medium text-amber-300">
+                          AI Gateway billing required
+                        </p>
+                      )}
+                      <p
+                        className={`text-sm ${
+                          doc.errorCode === "billing_required" ? "text-amber-200/80" : "text-red-300"
+                        }`}
+                      >
+                        {doc.error}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 mt-4">

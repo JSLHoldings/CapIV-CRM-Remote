@@ -1,6 +1,7 @@
 import { generateText, Output } from "ai"
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
+import { getAIErrorInfo } from "@/lib/ai-error"
 
 const analysisSchema = z.object({
   narrativeSummary: z
@@ -82,6 +83,7 @@ Provide a narrative summary, any additional key risks beyond what's already list
     })
   } catch (error) {
     console.error("[v0] Underwriting AI analysis error:", error)
-    return NextResponse.json({ error: "Analysis failed. Please try again." }, { status: 500 })
+    const { message, status, code } = getAIErrorInfo(error)
+    return NextResponse.json({ error: message, code }, { status })
   }
 }

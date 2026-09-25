@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { FileText, CheckCircle2, AlertTriangle, XCircle, TrendingUp, Shield, Search, Eye, Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { FileText, CheckCircle2, AlertTriangle, AlertCircle, XCircle, TrendingUp, Shield, Search, Eye, Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
@@ -114,6 +114,7 @@ export function Underwriting() {
   const [aiAnalysis, setAiAnalysis] = useState<AiUnderwritingAnalysis | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [aiErrorCode, setAiErrorCode] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("all")
   const [consumedDeepLinkId, setConsumedDeepLinkId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -301,17 +302,18 @@ export function Underwriting() {
   const runAiAnalysis = useCallback(async (deal: UnderwritingDeal) => {
     setAiLoading(true)
     setAiError(null)
+    setAiErrorCode(null)
     try {
       const response = await fetch("/api/underwriting/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deal }),
       })
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Analysis failed")
-      }
       const data = await response.json()
+      if (!response.ok) {
+        setAiErrorCode(typeof data.code === "string" ? data.code : null)
+        throw new Error(data.error || "Analysis failed")
+      }
       setAiAnalysis(data.analysis)
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "Analysis failed. Please try again.")
@@ -323,6 +325,7 @@ export function Underwriting() {
   const openDealDialog = (deal: UnderwritingDeal) => {
     setAiAnalysis(null)
     setAiError(null)
+    setAiErrorCode(null)
     setSelectedDeal(deal)
   }
 
@@ -587,11 +590,12 @@ export function Underwriting() {
       <Dialog
         open={!!selectedDeal}
         onOpenChange={(open) => {
-          if (!open) {
-            setSelectedDeal(null)
-            setAiAnalysis(null)
-            setAiError(null)
-          }
+                  if (!open) {
+                    setSelectedDeal(null)
+                    setAiAnalysis(null)
+                    setAiError(null)
+                    setAiErrorCode(null)
+                  }
         }}
       >
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto bg-slate-950 text-slate-100 border border-slate-800">
@@ -738,7 +742,16 @@ export function Underwriting() {
                   </Button>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {aiError && (
+                  {aiError && aiErrorCode === "billing_required" && (
+                    <div className="flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                      <AlertCircle className="h-4 w-4 flex-shrink-0 text-amber-400" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-amber-300">AI Gateway billing required</p>
+                        <p className="text-sm text-amber-200/80">{aiError}</p>
+                      </div>
+                    </div>
+                  )}
+                  {aiError && aiErrorCode !== "billing_required" && (
                     <p className="text-sm text-rose-400">{aiError}</p>
                   )}
                   {!aiAnalysis && !aiLoading && !aiError && (

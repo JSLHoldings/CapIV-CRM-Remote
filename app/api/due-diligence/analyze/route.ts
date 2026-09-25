@@ -2,6 +2,7 @@ import { generateText, Output } from 'ai'
 import { get } from '@vercel/blob'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { getAIErrorInfo } from '@/lib/ai-error'
 
 const analysisSchema = z.object({
   extractedData: z.object({
@@ -126,9 +127,7 @@ Document filename: ${filename || 'Unknown'}`,
     })
   } catch (error) {
     console.error('Analysis error:', error)
-    return NextResponse.json(
-      { error: 'Analysis failed. Please try again.' },
-      { status: 500 }
-    )
+    const { message, status, code } = getAIErrorInfo(error)
+    return NextResponse.json({ error: message, code }, { status })
   }
 }
