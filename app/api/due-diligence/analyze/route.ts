@@ -31,13 +31,21 @@ const analysisSchema = z.object({
   summary: z.string().describe('Executive summary of the document in 2-3 sentences'),
 })
 
+const ALLOWED_MODELS = {
+  claude: 'anthropic/claude-sonnet-4.6',
+  gemini: 'google/gemini-2.5-pro',
+} as const
+
 export async function POST(request: NextRequest) {
   try {
-    const { pathname, filename, fileType } = await request.json()
+    const { pathname, filename, fileType, model } = await request.json()
 
     if (!pathname) {
       return NextResponse.json({ error: 'Missing pathname' }, { status: 400 })
     }
+
+    const resolvedModel =
+      model === 'gemini' ? ALLOWED_MODELS.gemini : ALLOWED_MODELS.claude
 
     // Fetch the file from Vercel Blob
     const result = await get(pathname, { access: 'private' })
@@ -67,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     // Process with AI
     const { output } = await generateText({
-      model: 'anthropic/claude-sonnet-4.6',
+      model: resolvedModel,
       output: Output.object({
         schema: analysisSchema,
       }),
@@ -114,6 +122,7 @@ Document filename: ${filename || 'Unknown'}`,
     return NextResponse.json({
       analysis: output,
       analyzedAt: new Date().toISOString(),
+      model: model === 'gemini' ? 'gemini' : 'claude',
     })
   } catch (error) {
     console.error('Analysis error:', error)

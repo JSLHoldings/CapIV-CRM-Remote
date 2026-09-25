@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { FileText, CheckCircle2, AlertTriangle, XCircle, TrendingUp, Shield, Search, Eye, Loader2, RefreshCw } from "lucide-react"
+import { FileText, CheckCircle2, AlertTriangle, XCircle, TrendingUp, Shield, Search, Eye, Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { logActivity } from "@/lib/activity"
@@ -26,6 +26,14 @@ type ScoringCategory = {
   weight: number
   score: number
   weightedScore: number
+}
+
+type AiUnderwritingAnalysis = {
+  narrativeSummary: string
+  keyRisks: { risk: string; severity: "low" | "medium" | "high"; rationale: string }[]
+  recommendations: string[]
+  confidence: "Low" | "Medium" | "High"
+  recommendedAction: "Approve" | "Approve with conditions" | "Request more information" | "Decline"
 }
 
 function computeUnderwritingScore(deal: {
@@ -103,6 +111,9 @@ export function Underwriting() {
   const [filteredDeals, setFilteredDeals] = useState<UnderwritingDeal[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDeal, setSelectedDeal] = useState<UnderwritingDeal | null>(null)
+  const [aiAnalysis, setAiAnalysis] = useState<AiUnderwritingAnalysis | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("all")
   const [consumedDeepLinkId, setConsumedDeepLinkId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -286,6 +297,34 @@ export function Underwriting() {
     })
     setIsSaving(false)
   }, [deals, toast]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const runAiAnalysis = useCallback(async (deal: UnderwritingDeal) => {
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const response = await fetch("/api/underwriting/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deal }),
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Analysis failed")
+      }
+      const data = await response.json()
+      setAiAnalysis(data.analysis)
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Analysis failed. Please try again.")
+    } finally {
+      setAiLoading(false)
+    }
+  }, [])
+
+  const openDealDialog = (deal: UnderwritingDeal) => {
+    setAiAnalysis(null)
+    setAiError(null)
+    setSelectedDeal(deal)
+  }
 
   const buildUnderwritingReport = (deal: UnderwritingDeal) => {
     const lines = [
@@ -485,7 +524,7 @@ export function Underwriting() {
           <Card
             key={deal.id}
             className="bg-slate-900/80 border border-slate-800 hover:border-blue-500/40 transition-colors cursor-pointer"
-            onClick={() => setSelectedDeal(deal)}
+                onClick={() => openDealDialog(deal)}
           >
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
@@ -545,7 +584,16 @@ export function Underwriting() {
       </div>
 
       {/* Deal Details Dialog */}
-      <Dialog open={!!selectedDeal} onOpenChange={(open) => !open && setSelectedDeal(null)}>
+      <Dialog
+        open={!!selectedDeal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedDeal(null)
+            setAiAnalysis(null)
+            setAiError(null)
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto bg-slate-950 text-slate-100 border border-slate-800">
           <DialogHeader>
             <DialogTitle className="text-white">Underwriting Analysis</DialogTitle>
@@ -656,6 +704,114 @@ export function Underwriting() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* AI Underwriting Analysis */}
+              <Card className="bg-slate-900/80 border border-slate-800">
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <CardTitle className="text-base text-white flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-violet-300" />
+                    AI Underwriting Analysis
+                    <Badge className="border border-violet-500/30 bg-violet-500/10 text-violet-300">
+                      Gemini 2.5 Pro
+                    </Badge>
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-violet-500/40 text-violet-200 bg-transparent"
+                    disabled={aiLoading}
+                    onClick={() => runAiAnalysis(selectedDeal)}
+                  >
+                    {aiLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : aiAnalysis ? (
+                      <>
+                        <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                        Re-run analysis
+                      </>
+                    ) : (
+                      "Run AI analysis"
+                    )}
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {aiError && (
+                    <p className="text-sm text-rose-400">{aiError}</p>
+                  )}
+                  {!aiAnalysis && !aiLoading && !aiError && (
+                    <p className="text-sm text-slate-500">
+                      Run an independent AI review of this deal&apos;s underwriting profile using Gemini for due
+                      diligence support.
+                    </p>
+                  )}
+                  {aiAnalysis && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-800/50 p-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Recommended Action</p>
+                          <p className="text-sm font-semibold text-white">{aiAnalysis.recommendedAction}</p>
+                        </div>
+                        <Badge
+                          className={
+                            aiAnalysis.confidence === "High"
+                              ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                              : aiAnalysis.confidence === "Medium"
+                              ? "border border-amber-500/30 bg-amber-500/10 text-amber-300"
+                              : "border border-rose-500/30 bg-rose-500/10 text-rose-300"
+                          }
+                        >
+                          {aiAnalysis.confidence} Confidence
+                        </Badge>
+                      </div>
+
+                      <p className="text-sm text-slate-200 leading-relaxed">{aiAnalysis.narrativeSummary}</p>
+
+                      {aiAnalysis.keyRisks.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Additional Key Risks</p>
+                          <ul className="space-y-2">
+                            {aiAnalysis.keyRisks.map((risk, idx) => (
+                              <li key={idx} className="flex items-start gap-2 text-sm">
+                                <Badge
+                                  className={`shrink-0 border ${
+                                    risk.severity === "high"
+                                      ? "border-rose-500/30 bg-rose-500/10 text-rose-300"
+                                      : risk.severity === "medium"
+                                      ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                                      : "border-slate-600 bg-slate-700/50 text-slate-300"
+                                  }`}
+                                >
+                                  {risk.severity}
+                                </Badge>
+                                <span className="text-slate-200">
+                                  <span className="font-medium text-white">{risk.risk}:</span> {risk.rationale}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {aiAnalysis.recommendations.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Recommendations</p>
+                          <ul className="space-y-1.5">
+                            {aiAnalysis.recommendations.map((rec, idx) => (
+                              <li key={idx} className="flex items-start gap-2 text-sm">
+                                <CheckCircle2 className="h-4 w-4 text-violet-300 mt-0.5 flex-shrink-0" />
+                                <span className="text-slate-200">{rec}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Actions */}
               <div className="flex justify-between items-center pt-4 border-t border-slate-800">

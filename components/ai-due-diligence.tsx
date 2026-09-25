@@ -21,7 +21,21 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
+
+type AnalysisModel = "claude" | "gemini"
+
+const MODEL_OPTIONS: Array<{ value: AnalysisModel; label: string }> = [
+  { value: "claude", label: "Claude Sonnet 4.6" },
+  { value: "gemini", label: "Gemini 2.5 Pro" },
+]
 
 interface UploadedDocument {
   id: string
@@ -32,6 +46,7 @@ interface UploadedDocument {
   uploadedAt: string
   status: "pending" | "analyzing" | "analyzed" | "error"
   analysis?: DocumentAnalysis
+  analysisModel?: AnalysisModel
   error?: string
 }
 
@@ -119,6 +134,7 @@ export function AIDueDiligence() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null)
+  const [analysisModel, setAnalysisModel] = useState<AnalysisModel>("claude")
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -217,6 +233,7 @@ export function AIDueDiligence() {
           pathname: doc.pathname,
           filename: doc.filename,
           fileType: doc.type,
+          model: analysisModel,
         }),
       })
 
@@ -229,14 +246,21 @@ export function AIDueDiligence() {
       setDocuments((prev) =>
         prev.map((d) =>
           d.id === docId
-            ? { ...d, status: "analyzed", analysis: data.analysis }
+            ? {
+                ...d,
+                status: "analyzed",
+                analysis: data.analysis,
+                analysisModel: data.model ?? analysisModel,
+              }
             : d
         )
       )
       setExpandedDoc(docId)
       toast({
         title: "Analysis complete",
-        description: `${doc.filename} has been analyzed`,
+        description: `${doc.filename} was analyzed with ${
+          (data.model ?? analysisModel) === "gemini" ? "Gemini 2.5 Pro" : "Claude Sonnet 4.6"
+        }`,
       })
     } catch (error) {
       setDocuments((prev) =>
@@ -285,9 +309,31 @@ export function AIDueDiligence() {
             checks, and executive summaries.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm text-slate-400">
-          <Shield className="w-4 h-4 text-blue-400" />
-          <span>256-bit encrypted storage</span>
+        <div className="flex flex-col items-start gap-3 lg:items-end">
+          <div className="flex items-center gap-2 text-sm text-slate-400">
+            <Shield className="w-4 h-4 text-blue-400" />
+            <span>256-bit encrypted storage</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">
+              Model
+            </span>
+            <Select
+              value={analysisModel}
+              onValueChange={(value) => setAnalysisModel(value as AnalysisModel)}
+            >
+              <SelectTrigger className="h-8 w-[170px] border-slate-600 bg-slate-800/70 text-sm text-slate-200">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MODEL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
@@ -377,19 +423,24 @@ export function AIDueDiligence() {
                       </Badge>
                     )}
                     {doc.status === "analyzed" && doc.analysis && (
-                      <Badge
-                        className={`border ${
-                          doc.analysis.riskAssessment.level === "LOW"
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                            : doc.analysis.riskAssessment.level === "MEDIUM"
-                            ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
-                            : doc.analysis.riskAssessment.level === "HIGH"
-                            ? "border-orange-500/30 bg-orange-500/10 text-orange-300"
-                            : "border-red-500/30 bg-red-500/10 text-red-300"
-                        }`}
-                      >
-                        Risk: {doc.analysis.riskAssessment.score}
-                      </Badge>
+                      <>
+                        <Badge className="border border-slate-600 bg-slate-700/50 text-slate-300">
+                          {doc.analysisModel === "gemini" ? "Gemini" : "Claude"}
+                        </Badge>
+                        <Badge
+                          className={`border ${
+                            doc.analysis.riskAssessment.level === "LOW"
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                              : doc.analysis.riskAssessment.level === "MEDIUM"
+                              ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                              : doc.analysis.riskAssessment.level === "HIGH"
+                              ? "border-orange-500/30 bg-orange-500/10 text-orange-300"
+                              : "border-red-500/30 bg-red-500/10 text-red-300"
+                          }`}
+                        >
+                          Risk: {doc.analysis.riskAssessment.score}
+                        </Badge>
+                      </>
                     )}
                     {doc.status === "error" && (
                       <Badge className="border border-red-500/30 bg-red-500/10 text-red-300">
