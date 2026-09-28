@@ -5,7 +5,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAIErrorInfo } from '@/lib/ai-error'
 
-const google = createGoogleGenerativeAI({ apiKey: process.env.API_KEY })
+const google = createGoogleGenerativeAI({ apiKey: process.env.API_KEY_2 })
 
 const analysisSchema = z.object({
   extractedData: z.object({
@@ -50,14 +50,14 @@ export async function POST(request: NextRequest) {
 
     const useGemini = model === 'gemini'
 
-    if (useGemini && !process.env.API_KEY) {
+    if (useGemini && !process.env.API_KEY_2) {
       return NextResponse.json(
-        { error: 'Gemini is not configured. Missing API_KEY environment variable.', code: 'missing_api_key' },
+        { error: 'Gemini is not configured. Missing API_KEY_2 environment variable.', code: 'missing_api_key' },
         { status: 500 },
       )
     }
 
-    // Gemini calls the Google Generative AI API directly with API_KEY,
+    // Gemini calls the Google Generative AI API directly with API_KEY_2,
     // bypassing the Vercel AI Gateway (and its billing requirement).
     // Claude continues to route through the AI Gateway using a model string.
     const resolvedModel = useGemini ? google(ALLOWED_MODELS.gemini) : ALLOWED_MODELS.claude
