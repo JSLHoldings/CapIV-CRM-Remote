@@ -6,7 +6,7 @@ export type AIErrorInfo = {
   /** HTTP status to respond with. */
   status: number
   /** Machine-readable category for client-side branching (e.g. showing a distinct alert style). */
-  code: "billing_required" | "rate_limited" | "invalid_file" | "timeout" | "unknown"
+  code: "billing_required" | "rate_limited" | "invalid_file" | "invalid_api_key" | "timeout" | "unknown"
 }
 
 /**
@@ -40,6 +40,18 @@ export function getAIErrorInfo(error: unknown): AIErrorInfo {
           "AI analysis is unavailable because this project's AI Gateway account has no valid payment method on file. Add a credit card in your Vercel account billing settings to enable AI-powered document analysis.",
         status: 403,
         code: "billing_required",
+      }
+    }
+
+    if (
+      error.statusCode === 400 &&
+      /api key not valid|invalid api key|api_key_invalid/i.test(body ?? "")
+    ) {
+      return {
+        message:
+          "AI analysis is unavailable because the configured Gemini API key is invalid or not enabled for the Generative Language API. Check the API_KEY project environment variable.",
+        status: 400,
+        code: "invalid_api_key",
       }
     }
 
