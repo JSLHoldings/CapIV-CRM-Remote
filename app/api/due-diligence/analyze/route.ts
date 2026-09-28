@@ -1,8 +1,11 @@
 import { generateText, Output } from 'ai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { get } from '@vercel/blob'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAIErrorInfo } from '@/lib/ai-error'
+
+const google = createGoogleGenerativeAI({ apiKey: process.env.API_KEY })
 
 const analysisSchema = z.object({
   extractedData: z.object({
@@ -34,7 +37,7 @@ const analysisSchema = z.object({
 
 const ALLOWED_MODELS = {
   claude: 'anthropic/claude-sonnet-4.6',
-  gemini: 'google/gemini-2.5-pro',
+  gemini: 'gemini-2.5-pro',
 } as const
 
 export async function POST(request: NextRequest) {
@@ -45,8 +48,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing pathname' }, { status: 400 })
     }
 
-    const resolvedModel =
-      model === 'gemini' ? ALLOWED_MODELS.gemini : ALLOWED_MODELS.claude
+    const useGemini = model === 'gemini'
+
+    if (useGemini && !process.env.API_KEY) {
+      return NextResponse.json(
+        { error: 'Gemini is not configured. Missing API_KEY environment variable.', code: 'missing_api_key' },
+        { status: 500 },
+      )
+    }
+
+    // Gemini calls the Google Generative AI API directly with API_KEY,
+    // bypassing the Vercel AI Gateway (and its billing requirement).
+    // Claude continues to route through the AI Gateway using a model string.
+    const resolvedModel = useGemini ? google(ALLOWED_MODELS.gemini) : ALLOWED_MODELS.claude
 
     // Fetch the file from Vercel Blob
     const result = await get(pathname, { access: 'private' })
