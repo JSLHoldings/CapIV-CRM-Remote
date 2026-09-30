@@ -9,6 +9,7 @@ export type AccountType =
   | "investor-family-office"
   | "capital-partner"
   | "service-provider"
+  | "ian"
 
 interface User {
   id: string
@@ -20,7 +21,7 @@ interface User {
 
 interface AuthContextType {
   user: User | null
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<boolean>
+  login: (email: string, password: string, rememberMe?: boolean, accountType?: AccountType) => Promise<boolean>
   signup: (email: string, password: string, name: string, accountType: AccountType) => Promise<boolean>
   logout: () => void
   isLoading: boolean
@@ -147,7 +148,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, updateActivity])
 
-  const login = async (email: string, password: string, rememberMe = false): Promise<boolean> => {
+  const login = async (
+    email: string,
+    password: string,
+    rememberMe = false,
+    accountType?: AccountType,
+  ): Promise<boolean> => {
     setIsLoading(true)
 
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -158,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email,
         name: email.split("@")[0],
         role: "user",
+        accountType,
       }
 
       const sessionDuration = rememberMe ? REMEMBER_ME_DURATION : SESSION_DURATION

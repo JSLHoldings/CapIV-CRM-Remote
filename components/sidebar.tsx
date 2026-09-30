@@ -7,11 +7,13 @@ import { useAuth } from "@/hooks/use-auth"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
+import { isIanUser } from "@/lib/access-control"
 
 export function Sidebar() {
   const pathname = usePathname()
   const { user, logout } = useAuth()
   const [debugMode, setDebugMode] = useState(false)
+  const isIan = isIanUser(user)
 
   useEffect(() => {
     const checkDebugMode = () => {
@@ -36,6 +38,10 @@ export function Sidebar() {
     { id: "admin", label: "Admin", href: "/admin", isAdmin: true },
   ]
 
+  const visibleMenuItems = isIan
+    ? menuItems.filter((item) => item.id === "core" || item.id === "access")
+    : menuItems
+
   return (
     <div className="w-64 bg-slate-950 text-slate-100 border-r border-slate-800 flex flex-col">
       <div className="px-6 py-5 border-b border-slate-800">
@@ -48,10 +54,15 @@ export function Sidebar() {
           )}
         </div>
         <p className="mt-3 text-xs text-slate-500 uppercase tracking-[0.25em]">Command Suite</p>
+        {isIan && (
+          <Badge className="mt-3 bg-amber-500/10 text-amber-200 border border-amber-500/30 text-[10px] tracking-[0.2em] uppercase">
+            IAN Restricted Layer
+          </Badge>
+        )}
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-1">
-        {menuItems.map((item) => {
+        {visibleMenuItems.map((item) => {
           const isActive = pathname === item.href
 
           return (

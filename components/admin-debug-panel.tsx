@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/use-auth"
+import type { AccountType } from "@/contexts/auth-context"
 import { useVerification } from "@/contexts/verification-context"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
@@ -24,7 +25,7 @@ export function AdminDebugPanel() {
   const [mockUser, setMockUser] = useState({
     email: "admin@capiv.com",
     name: "Admin User",
-    accountType: "investor" as const,
+    accountType: "investor-family-office" as AccountType,
   })
   const [omSubmissions, setOmSubmissions] = useState<any[]>([])
   const [localStorageDump, setLocalStorageDump] = useState("{}")
@@ -81,7 +82,7 @@ export function AdminDebugPanel() {
   }
 
   const handleMockLogin = () => {
-    login(mockUser.email, "password", mockUser.accountType)
+    login(mockUser.email, "password", false, mockUser.accountType)
     console.log("[v0] Mock user logged in:", mockUser)
   }
 
@@ -320,6 +321,7 @@ export function AdminDebugPanel() {
                       <SelectItem value="investor">Investor / Family Office</SelectItem>
                       <SelectItem value="capital-partner">Capital Partner</SelectItem>
                       <SelectItem value="service-provider">Service Provider</SelectItem>
+                      <SelectItem value="ian">IAN (Restricted: Core + Access only)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

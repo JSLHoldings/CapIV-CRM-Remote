@@ -2,8 +2,9 @@
 
 import type React from "react"
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
+import { getIanDefaultPath, isIanUser, isPathAllowedForIan } from "@/lib/access-control"
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -13,12 +14,21 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
+  const restrictedToIan = isIanUser(user) && !isPathAllowedForIan(pathname)
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (isLoading) return
+
+    if (!user) {
       router.push("/login")
+      return
     }
-  }, [user, isLoading, router])
+
+    if (restrictedToIan) {
+      router.push(getIanDefaultPath())
+    }
+  }, [user, isLoading, restrictedToIan, router])
 
   if (isLoading) {
     return (
@@ -35,6 +45,10 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
 
   if (!user) {
     return null // Will redirect to login
+  }
+
+  if (restrictedToIan) {
+    return null // Will redirect to the IAN layer's default page
   }
 
   return <>{children}</>
