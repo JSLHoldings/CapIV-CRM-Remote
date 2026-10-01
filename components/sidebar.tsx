@@ -30,17 +30,11 @@ export function Sidebar() {
   const menuItems = [
     { id: "dashboard", label: "Dashboard", href: "/" },
     { id: "core", label: "CapIV Core", href: "/core" },
-    { id: "access", label: "CapIV Access", href: "/access" },
-    { id: "deals", label: "Deal Source", href: "/deals" },
     { id: "capiv-iq", label: "CapIV IQ", href: "/capiv-iq" },
-    { id: "capiv-eq", label: "CapIV EQ", href: "/capiv-eq" },
-    { id: "account", label: "Account", href: "/account" },
-    { id: "admin", label: "Admin", href: "/admin", isAdmin: true },
+    { id: "access", label: "CapIV Access", href: "/access" },
   ]
 
-  const visibleMenuItems = isIan
-    ? menuItems.filter((item) => item.id === "core" || item.id === "access")
-    : menuItems
+  const visibleMenuItems = menuItems
 
   return (
     <div className="w-64 bg-slate-950 text-slate-100 border-r border-slate-800 flex flex-col">
@@ -73,12 +67,9 @@ export function Sidebar() {
                   isActive
                     ? "bg-blue-600 text-white hover:bg-blue-500"
                     : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                } ${item.isAdmin ? "border border-red-500/40" : ""}`}
+                }`}
               >
                 {item.label}
-                {item.isAdmin && (
-                  <Badge className="ml-auto text-[10px] bg-red-500/20 text-red-200 border-red-500/40">DEV</Badge>
-                )}
               </Button>
             </Link>
           )

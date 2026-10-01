@@ -1,21 +1,22 @@
 import type { AccountType } from "@/contexts/auth-context"
 
 /**
- * IAN is a restricted access layer. Users on this layer can only reach
- * CapIV Core and CapIV Access — every other route redirects them back.
+ * The main application is restricted to CapIV Core, CapIV IQ, and CapIV
+ * Access, plus the simplified dashboard landing page. Every other route
+ * redirects back to the dashboard. This applies to every signed-in user.
  */
 export const IAN_ACCOUNT_TYPE: AccountType = "ian"
 
-export const IAN_ALLOWED_PATHS = ["/core", "/access"] as const
+export const ALLOWED_PATHS = ["/", "/core", "/access", "/capiv-iq"] as const
 
 export function isIanUser(user: { accountType?: AccountType } | null | undefined): boolean {
   return user?.accountType === IAN_ACCOUNT_TYPE
 }
 
-export function isPathAllowedForIan(pathname: string): boolean {
-  return IAN_ALLOWED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+export function isPathAllowed(pathname: string): boolean {
+  return ALLOWED_PATHS.some((path) => pathname === path || (path !== "/" && pathname.startsWith(`${path}/`)))
 }
 
-export function getIanDefaultPath(): string {
-  return IAN_ALLOWED_PATHS[0]
+export function getDefaultPath(): string {
+  return "/"
 }

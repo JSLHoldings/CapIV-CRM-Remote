@@ -4,7 +4,7 @@ import type React from "react"
 import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
-import { getIanDefaultPath, isIanUser, isPathAllowedForIan } from "@/lib/access-control"
+import { getDefaultPath, isPathAllowed } from "@/lib/access-control"
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -15,7 +15,7 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  const restrictedToIan = isIanUser(user) && !isPathAllowedForIan(pathname)
+  const isRestrictedRoute = !isPathAllowed(pathname)
 
   useEffect(() => {
     if (isLoading) return
@@ -25,10 +25,10 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
       return
     }
 
-    if (restrictedToIan) {
-      router.push(getIanDefaultPath())
+    if (isRestrictedRoute) {
+      router.push(getDefaultPath())
     }
-  }, [user, isLoading, restrictedToIan, router])
+  }, [user, isLoading, isRestrictedRoute, router])
 
   if (isLoading) {
     return (
@@ -47,8 +47,8 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
     return null // Will redirect to login
   }
 
-  if (restrictedToIan) {
-    return null // Will redirect to the IAN layer's default page
+  if (isRestrictedRoute) {
+    return null // Will redirect to the dashboard
   }
 
   return <>{children}</>
