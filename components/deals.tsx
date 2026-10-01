@@ -1,1303 +1,855 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { FormEvent, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { ArrowRight, Plus, MapPin, DollarSign, Calendar, Building, Upload, FileText, TrendingUp, Users, Star, Heart, Share2, Bookmark, Eye, Download, MessageCircle, BarChart3, PieChart, Activity } from "lucide-react"
-import { SearchFilters } from "@/components/search-filters"
+import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/components/ui/use-toast"
+import { Search, Plus, TrendingUp, DollarSign, Calendar, MapPin, Download } from "lucide-react"
 
 interface Deal {
-  id: string
-  title: string
+  id: number
+  name: string
   location: string
-  assetType: string
-  dealSize: string
-  status: "Active" | "Pending" | "Closed" | "Under Review"
+  type: string
+  status: "Active" | "Due Diligence" | "Closed" | "Watch"
+  investment: string
+  irr: string
+  timeline: string
   sponsor: string
-  targetReturn: string
-  holdPeriod: string
   description: string
-  dateAdded: string
-  investmentType: "Equity" | "Debt" | "Hybrid"
-  riskProfile: "Core" | "Core-Plus" | "Value-Add" | "Opportunistic"
-  // Enhanced interactive data
-  views: number
-  likes: number
-  isLiked?: boolean
-  isBookmarked?: boolean
-  progress: number
-  investors: number
-  minimumInvestment: string
-  currentRaise: string
-  maxRaise: string
-  images?: string[]
-  keyMetrics: {
-    capRate: string
-    noi: string
-    occupancy: string
-    yearBuilt: string
+}
+
+interface DealAnalysis {
+  score: string
+  riskBand: string
+  liquidityWindow: string
+  aiSummary: string
+  underwritingSync: string
+  stressNotes: string
+}
+
+const initialDeals: Deal[] = [
+  {
+    id: 1,
+    name: "Harbor View Apartments",
+    location: "Austin, TX",
+    type: "Multifamily",
+    status: "Active",
+    investment: "$15M",
+    irr: "14.2%",
+    timeline: "Q2 2025",
+    sponsor: "Harbor Partners",
+    description:
+      "198-unit Class B+ value-add opportunity with strong leasing velocity and 320 bps upside through renovation program.",
+  },
+  {
+    id: 2,
+    name: "Downtown Office Complex",
+    location: "Dallas, TX",
+    type: "Office",
+    status: "Due Diligence",
+    investment: "$32M",
+    irr: "12.8%",
+    timeline: "Q3 2025",
+    sponsor: "Sterling Capital",
+    description:
+      "Two-tower CBD office reposition. Anchored leases in negotiation with corporate tenants; T-12 occupancy at 84%.",
+  },
+  {
+    id: 3,
+    name: "Retail Shopping Center",
+    location: "Houston, TX",
+    type: "Retail",
+    status: "Closed",
+    investment: "$8.5M",
+    irr: "16.1%",
+    timeline: "Q1 2025",
+    sponsor: "Oakwood Holdings",
+    description:
+      "Stabilized grocery-anchored retail strip with 12-pad expansion potential and signed LOIs for two national tenants.",
+  },
+]
+
+const generatePreAnalysis = (deal: Deal): DealAnalysis => {
+  const mapping: Record<Deal["status"], { score: string; riskBand: string }> = {
+    Active: { score: "82 / 100", riskBand: "Moderate-Low" },
+    "Due Diligence": { score: "78 / 100", riskBand: "Moderate" },
+    Closed: { score: "88 / 100", riskBand: "Low" },
+    Watch: { score: "71 / 100", riskBand: "Elevated" },
   }
-  timeline: Array<{
-    date: string
-    milestone: string
-    status: "completed" | "pending" | "upcoming"
-  }>
+
+  const defaults = mapping[deal.status]
+  return {
+    score: defaults.score,
+    riskBand: defaults.riskBand,
+    liquidityWindow: deal.timeline,
+    aiSummary: `AI signal suggests ${deal.type.toLowerCase()} exposure with ${deal.irr} target IRR remains ${
+      deal.status === "Watch" ? "sensitive to market shifts" : "within mandate tolerances"
+    }.`,
+    underwritingSync: `/capiv-iq?tab=underwriting&deal=${deal.id}`,
+    stressNotes:
+      deal.status === "Watch"
+        ? "Recommend enhanced lease verification and collateral audit prior to commitment."
+        : "Scenario tests fall within target covenants; proceed to underwriting when ready.",
+  }
+}
+
+const escapePdfText = (text: string) =>
+  text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)").replace(/\r?\n/g, " ")
+
+const sanitize = (value: string) =>
+  value.replace(/[^\x09\x0A\x0D\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim()
+
+const wrapText = (value: string, maxLength = 88) => {
+  const clean = sanitize(value || "")
+  if (!clean) return []
+  const words = clean.split(" ")
+  const lines: string[] = []
+  let current = ""
+  for (const word of words) {
+    const tentative = `${current}${word} `
+    if (tentative.trim().length > maxLength && current) {
+      lines.push(current.trim())
+      current = `${word} `
+    } else {
+      current = tentative
+    }
+  }
+  if (current.trim()) {
+    lines.push(current.trim())
+  }
+  return lines
+}
+
+const buildDealPdf = (deal: Deal, analysis?: DealAnalysis) => {
+  const title = sanitize(deal.name || "CapIV Opportunity")
+  const subtitleParts = [deal.location, deal.type, deal.status].filter(Boolean)
+  const subtitle = sanitize(subtitleParts.join(" • ") || "Live opportunity inside CapIV Command")
+
+  const snapshotLines = [
+    `Sponsor: ${deal.sponsor || "TBD"}`,
+    `Property Type: ${deal.type || "Unspecified"}`,
+    `Status: ${deal.status}`,
+    `Capital Request: ${deal.investment || "Pending"}`,
+    `Target IRR: ${deal.irr || "In diligence"}`,
+    `Liquidity Window: ${deal.timeline || "Call to confirm"}`,
+  ]
+
+  const propertyHighlights = [
+    `Primary Market: ${deal.location || "To be announced"}`,
+    `Mandate Alignment: ${analysis?.riskBand || "CapIV reviewing"}`,
+    `Score: ${analysis?.score || "Awaiting full underwriting"}`,
+    `Watch Notes: ${analysis?.stressNotes || "No elevated risks logged."}`,
+  ]
+
+  const overviewLines = wrapText(
+    deal.description ||
+      "Sponsor has not provided a full narrative yet. CapIV diligence will populate this section as documents are received.",
+  )
+
+  const aiSummaryLines = analysis?.aiSummary
+    ? wrapText(analysis.aiSummary)
+    : wrapText(
+        "AI signals will populate once the underwriting lab confirms comparables and updated rent rolls. Until then, leverage CapIV Access for sponsor Q&A to accelerate readiness.",
+      )
+
+  const diligenceActions = [
+    `Underwriting Link: ${analysis?.underwritingSync || `/capiv-iq?tab=underwriting&deal=${deal.id}`}`,
+    "Persona AML + NDA: Required prior to data room unlocks.",
+    "Data Room Readiness: CapIV Diligence Hub tracks NDAs, PPMS, and compliance packets unified with CapIV IQ.",
+  ]
+
+  const capitalSignals = [
+    "Capital Stack Notes: Confirm leverage assumptions and co-invest windows.",
+    "Scenario Planning: Stress-test DSCR, lease-up thresholds, and exit sensitivities inside CapIV EQ.",
+    "Next Milestone: Schedule sponsor sync for updated financial model delivery.",
+  ]
+
+  const disclaimerLines = wrapText(
+    "Generated automatically by CapIV Command. This report is informational only and not an offer to sell securities. Contact the sponsor or CapIV team for authenticated data rooms, NDAs, and regulatory disclosures.",
+  )
+
+  const shapes = [
+    `q
+0.08 0.17 0.34 rg
+0 720 612 120 re
+f
+Q`,
+    `q
+0.96 0.97 0.99 rg
+40 500 532 2 re
+f
+Q`,
+  ]
+
+  const textBlocks: string[] = []
+  const leftMargin = 60
+  let cursorY = 700
+  const headerTopY = 768
+  const primaryText = "0.16 0.2 0.32"
+  const secondaryText = "0.33 0.37 0.48"
+
+  const addLine = (text: string, options?: { font?: "F1" | "F2"; size?: number; color?: string; gap?: number }) => {
+    const font = options?.font ?? "F1"
+    const size = options?.size ?? 11
+    const color = options?.color ?? primaryText
+    const gap = options?.gap ?? (font === "F2" ? 26 : 18)
+    const safeText = escapePdfText(text)
+    textBlocks.push(`BT
+/${font} ${size} Tf
+${color} rg
+${leftMargin} ${cursorY.toFixed(2)} Td
+(${safeText}) Tj
+ET`)
+    cursorY -= gap
+  }
+
+  const addHeading = (text: string, color = "0.28 0.45 0.75") => {
+    addLine(text, { font: "F2", size: 13, color })
+  }
+
+  const addParagraph = (lines: string[], color = primaryText) => {
+    lines.forEach((line) => addLine(line, { color, size: 10 }))
+    cursorY -= 8
+  }
+
+  const titleLines = wrapText(title, 46).slice(0, 2)
+  const subtitleLines = wrapText(subtitle, 72).slice(0, 2)
+
+  titleLines.forEach((line, index) => {
+    textBlocks.push(`BT
+/F2 22 Tf
+1 1 1 rg
+${leftMargin} ${(headerTopY - index * 24).toFixed(2)} Td
+(${escapePdfText(line)}) Tj
+ET`)
+  })
+
+  subtitleLines.forEach((line, index) => {
+    textBlocks.push(`BT
+/F1 12 Tf
+0.87 0.92 1 rg
+${leftMargin} ${(headerTopY - 52 - index * 16).toFixed(2)} Td
+(${escapePdfText(line)}) Tj
+ET`)
+  })
+
+  if (analysis?.score || analysis?.riskBand) {
+    textBlocks.push(`BT
+/F1 11 Tf
+0.75 0.86 1 rg
+${leftMargin} ${(headerTopY - 84).toFixed(2)} Td
+(${escapePdfText(`CapIV Score ${analysis?.score || "Pending"} • ${analysis?.riskBand || "Risk review in progress"}`)}) Tj
+ET`)
+  }
+
+  cursorY = 640
+
+  addHeading("Deal Snapshot")
+  addParagraph(snapshotLines.map((line) => `- ${line}`))
+
+  addHeading("Property Overview")
+  addParagraph(overviewLines, secondaryText)
+
+  addHeading("Strategic Highlights", "0.31 0.54 0.42")
+  addParagraph(propertyHighlights.map((line) => `- ${line}`))
+  addHeading("Operational Snapshot", "0.3 0.33 0.6")
+  addParagraph([
+    `Occupancy Signal: ${analysis?.riskBand ? `${analysis.riskBand} mandate fit` : "Pending sponsor docs"}`,
+    `Underwriting Contact: ${deal.sponsor || "CapIV Sponsor Team"}`,
+    "Data Room Status: NDA pending finalization in CapIV IQ.",
+    "Comparable Set: Pulled from CapIV Access AI signals (see underwriting hub).",
+  ])
+
+  addHeading("AI Summary", "0.54 0.45 0.19")
+  addParagraph(aiSummaryLines, primaryText)
+
+  addHeading("Diligence Actions", "0.24 0.42 0.66")
+  addParagraph(diligenceActions)
+
+  addHeading("Capital Signals", "0.5 0.36 0.78")
+  addParagraph(capitalSignals)
+
+  addHeading("Disclaimers", "0.58 0.32 0.32")
+  addParagraph(disclaimerLines, secondaryText)
+
+  const content = `
+${shapes.join("\n")}
+${textBlocks.join("\n")}
+`
+
+  const objects = [
+    `1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+`,
+    `2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+`,
+    `3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>
+endobj
+`,
+    `4 0 obj
+<< /Length ${content.length} >>
+stream
+${content}
+endstream
+endobj
+`,
+    `5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+`,
+    `6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+`,
+  ]
+
+  let pdf = "%PDF-1.4\n"
+  const offsets = [0]
+
+  objects.forEach((object) => {
+    offsets.push(pdf.length)
+    pdf += object
+  })
+
+  const xrefOffset = pdf.length
+  pdf += `xref
+0 ${objects.length + 1}
+0000000000 65535 f 
+`
+  for (let i = 1; i <= objects.length; i++) {
+    pdf += `${offsets[i].toString().padStart(10, "0")} 00000 n \n`
+  }
+
+  pdf += `trailer
+<< /Size ${objects.length + 1} /Root 1 0 R >>
+startxref
+${xrefOffset}
+%%EOF`
+
+  return pdf
 }
 
 export function Deals() {
-  const [deals, setDeals] = useState<Deal[]>([])
-  const [filteredDeals, setFilteredDeals] = useState<Deal[]>([])
+  const { toast } = useToast()
+  const router = useRouter()
+  const createEmptyDeal = (): Omit<Deal, "id"> => ({
+    name: "",
+    location: "",
+    type: "",
+    status: "Active",
+    investment: "",
+    irr: "",
+    timeline: "",
+    sponsor: "",
+    description: "",
+  })
+  const [deals, setDeals] = useState<Deal[]>(initialDeals)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [isOMDialogOpen, setIsOMDialogOpen] = useState(false)
-  const [selectedDealForOM, setSelectedDealForOM] = useState<Deal | null>(null)
-  const [filters, setFilters] = useState({
-    status: [],
-    assetType: [],
-    location: [],
-    riskProfile: [],
-    investmentSize: { min: "", max: "" },
-    role: [],
-  })
-  const [sortBy, setSortBy] = useState("date")
+  const [newDeal, setNewDeal] = useState<Omit<Deal, "id">>(createEmptyDeal())
+  const [interestedDeals, setInterestedDeals] = useState<number[]>([])
 
-  useEffect(() => {
-    const sampleDeals: Deal[] = [
-      {
-        id: "1",
-        title: "Downtown Mixed-Use Development",
-        location: "Los Angeles, CA",
-        assetType: "Mixed-Use",
-        dealSize: "$45M",
-        status: "Active",
-        sponsor: "Urban Axis Capital",
-        targetReturn: "18-22%",
-        holdPeriod: "5-7 years",
-        description: "Prime downtown location with retail and residential components. Opportunity Zone qualified. This mixed-use development represents a unique opportunity to invest in a rapidly gentrifying neighborhood with strong demographic trends and limited new supply.",
-        dateAdded: "2025-01-15",
-        investmentType: "Equity",
-        riskProfile: "Value-Add",
-        views: 1247,
-        likes: 89,
-        isLiked: false,
-        isBookmarked: false,
-        progress: 68,
-        investors: 23,
-        minimumInvestment: "$100,000",
-        currentRaise: "$30.6M",
-        maxRaise: "$45M",
-        images: ["/modern-apartment-building.png"],
-        keyMetrics: {
-          capRate: "5.2%",
-          noi: "$2.34M",
-          occupancy: "87%",
-          yearBuilt: "2024"
-        },
-        timeline: [
-          { date: "2024-01-15", milestone: "Land Acquisition", status: "completed" },
-          { date: "2024-06-01", milestone: "Construction Start", status: "completed" },
-          { date: "2025-03-01", milestone: "Construction Completion", status: "upcoming" },
-          { date: "2025-06-01", milestone: "Leasing Launch", status: "upcoming" }
-        ]
-      },
-      {
-        id: "2",
-        title: "Industrial Logistics Portfolio",
-        location: "Phoenix, AZ",
-        assetType: "Industrial",
-        dealSize: "$120M",
-        status: "Under Review",
-        sponsor: "Pacific Real Estate Partners",
-        targetReturn: "12-15%",
-        holdPeriod: "3-5 years",
-        description: "Class A industrial properties with long-term triple net leases to investment grade tenants. This portfolio consists of 5 strategically located distribution centers serving major e-commerce and logistics companies.",
-        dateAdded: "2025-01-10",
-        investmentType: "Equity",
-        riskProfile: "Core-Plus",
-        views: 892,
-        likes: 45,
-        isLiked: true,
-        isBookmarked: true,
-        progress: 42,
-        investors: 18,
-        minimumInvestment: "$250,000",
-        currentRaise: "$50.4M",
-        maxRaise: "$120M",
-        images: ["/bustling-shopping-center.png"],
-        keyMetrics: {
-          capRate: "6.8%",
-          noi: "$8.16M",
-          occupancy: "98%",
-          yearBuilt: "2022"
-        },
-        timeline: [
-          { date: "2024-08-01", milestone: "Due Diligence Start", status: "completed" },
-          { date: "2025-01-01", milestone: "Legal Review", status: "pending" },
-          { date: "2025-02-15", milestone: "Final Approval", status: "upcoming" },
-          { date: "2025-03-01", milestone: "Closing", status: "upcoming" }
-        ]
-      },
-      {
-        id: "3",
-        title: "Luxury Multifamily Complex",
-        location: "Austin, TX",
-        assetType: "Multifamily",
-        dealSize: "$85M",
-        status: "Pending",
-        sponsor: "Metropolitan Investment Group",
-        targetReturn: "15-18%",
-        holdPeriod: "4-6 years",
-        description: "350-unit luxury apartment complex in high-growth submarket with value-add opportunities. Located in Austin's tech corridor with proximity to major employers and entertainment districts.",
-        dateAdded: "2025-01-08",
-        investmentType: "Equity",
-        riskProfile: "Value-Add",
-        views: 1567,
-        likes: 112,
-        isLiked: false,
-        isBookmarked: false,
-        progress: 85,
-        investors: 31,
-        minimumInvestment: "$75,000",
-        currentRaise: "$72.25M",
-        maxRaise: "$85M",
-        images: ["/modern-apartment-living.png"],
-        keyMetrics: {
-          capRate: "4.8%",
-          noi: "$4.08M",
-          occupancy: "92%",
-          yearBuilt: "2023"
-        },
-        timeline: [
-          { date: "2024-11-01", milestone: "Marketing Launch", status: "completed" },
-          { date: "2025-01-01", milestone: "Investor Presentations", status: "completed" },
-          { date: "2025-02-01", milestone: "Final Close", status: "pending" },
-          { date: "2025-03-01", milestone: "Fund Operations", status: "upcoming" }
-        ]
-      },
-      {
-        id: "4",
-        title: "Office Building Acquisition",
-        location: "Denver, CO",
-        assetType: "Office",
-        dealSize: "$65M",
-        status: "Active",
-        sponsor: "Rocky Mountain Capital",
-        targetReturn: "10-13%",
-        holdPeriod: "7-10 years",
-        description: "Class A office building with stable tenant base and below-market rents. Located in Denver's central business district with excellent transportation access and modern amenities.",
-        dateAdded: "2025-01-05",
-        investmentType: "Equity",
-        riskProfile: "Core",
-        views: 743,
-        likes: 67,
-        isLiked: true,
-        isBookmarked: false,
-        progress: 31,
-        investors: 12,
-        minimumInvestment: "$150,000",
-        currentRaise: "$20.15M",
-        maxRaise: "$65M",
-        images: ["/modern-apartment-building.png"],
-        keyMetrics: {
-          capRate: "5.5%",
-          noi: "$3.575M",
-          occupancy: "95%",
-          yearBuilt: "2018"
-        },
-        timeline: [
-          { date: "2024-12-01", milestone: "Market Analysis", status: "completed" },
-          { date: "2025-01-01", milestone: "Investment Launch", status: "completed" },
-          { date: "2025-04-01", milestone: "Due Diligence", status: "upcoming" },
-          { date: "2025-06-01", milestone: "Closing", status: "upcoming" }
-        ]
-      },
-      {
-        id: "5",
-        title: "Retail Strip Center",
-        location: "Miami, FL",
-        assetType: "Retail",
-        dealSize: "$28M",
-        status: "Closed",
-        sponsor: "Sunshine Properties",
-        targetReturn: "14-17%",
-        holdPeriod: "3-5 years",
-        description: "Anchored retail center with renovation and re-leasing opportunities. Located in high-traffic area with strong local demographics and redevelopment potential.",
-        dateAdded: "2024-12-20",
-        investmentType: "Equity",
-        riskProfile: "Opportunistic",
-        views: 445,
-        likes: 23,
-        isLiked: false,
-        isBookmarked: true,
-        progress: 100,
-        investors: 15,
-        minimumInvestment: "$50,000",
-        currentRaise: "$28M",
-        maxRaise: "$28M",
-        images: ["/bustling-shopping-center.png"],
-        keyMetrics: {
-          capRate: "7.2%",
-          noi: "$2.016M",
-          occupancy: "78%",
-          yearBuilt: "2015"
-        },
-        timeline: [
-          { date: "2024-12-01", milestone: "Fundraising Launch", status: "completed" },
-          { date: "2024-12-20", milestone: "Full Subscription", status: "completed" },
-          { date: "2025-01-15", milestone: "Closing", status: "completed" },
-          { date: "2025-02-01", milestone: "Asset Management", status: "completed" }
-        ]
-      },
-      {
-        id: "6",
-        title: "Student Housing Development",
-        location: "Chapel Hill, NC",
-        assetType: "Student Housing",
-        dealSize: "$52M",
-        status: "Active",
-        sponsor: "Education Realty Partners",
-        targetReturn: "16-20%",
-        holdPeriod: "5-7 years",
-        description: "Purpose-built student housing near major university campus with guaranteed occupancy. Modern amenities and proximity to campus create strong rental demand.",
-        dateAdded: "2024-12-15",
-        investmentType: "Equity",
-        riskProfile: "Value-Add",
-        views: 987,
-        likes: 78,
-        isLiked: false,
-        isBookmarked: false,
-        progress: 56,
-        investors: 19,
-        minimumInvestment: "$80,000",
-        currentRaise: "$29.12M",
-        maxRaise: "$52M",
-        images: ["/modern-apartment-living.png"],
-        keyMetrics: {
-          capRate: "6.1%",
-          noi: "$3.172M",
-          occupancy: "100%",
-          yearBuilt: "2024"
-        },
-        timeline: [
-          { date: "2024-10-01", milestone: "Construction Start", status: "completed" },
-          { date: "2024-12-01", milestone: "Investment Launch", status: "completed" },
-          { date: "2025-08-01", milestone: "Construction Complete", status: "upcoming" },
-          { date: "2025-09-01", milestone: "Student Move-in", status: "upcoming" }
-        ]
-      },
-    ]
-    setDeals(sampleDeals)
-    setFilteredDeals(sampleDeals)
-  }, [])
-
-  useEffect(() => {
-    const filtered = deals.filter((deal) => {
-      // Text search
-      const matchesSearch =
-        deal.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        deal.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        deal.assetType.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        deal.sponsor.toLowerCase().includes(searchTerm.toLowerCase())
-
-      // Status filter
-      const matchesStatus = !filters.status?.length || filters.status.includes(deal.status)
-
-      // Asset type filter
-      const matchesAssetType = !filters.assetType?.length || filters.assetType.includes(deal.assetType)
-
-      // Location filter (check if deal location contains any of the filtered locations)
-      const matchesLocation =
-        !filters.location?.length ||
-        filters.location.some((loc) => deal.location.toLowerCase().includes(loc.toLowerCase()))
-
-      // Risk profile filter
-      const matchesRiskProfile = !filters.riskProfile?.length || filters.riskProfile.includes(deal.riskProfile)
-
-      // Investment size filter
-      const dealSizeNum = Number.parseFloat(deal.dealSize.replace(/[$M,]/g, ""))
-      const minSize = filters.investmentSize?.min ? Number.parseFloat(filters.investmentSize.min) : 0
-      const maxSize = filters.investmentSize?.max
-        ? Number.parseFloat(filters.investmentSize.max)
-        : Number.POSITIVE_INFINITY
-      const matchesSize = dealSizeNum >= minSize && dealSizeNum <= maxSize
-
-      return matchesSearch && matchesStatus && matchesAssetType && matchesLocation && matchesRiskProfile && matchesSize
-    })
-
-    // Apply sorting
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case "name":
-          return a.title.localeCompare(b.title)
-        case "name-desc":
-          return b.title.localeCompare(a.title)
-        case "date":
-          return new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
-        case "size":
-          return (
-            Number.parseFloat(b.dealSize.replace(/[$M,]/g, "")) - Number.parseFloat(a.dealSize.replace(/[$M,]/g, ""))
-          )
-        case "return":
-          return Number.parseFloat(b.targetReturn.split("-")[0]) - Number.parseFloat(a.targetReturn.split("-")[0])
-        default:
-          return 0
-      }
-    })
-
-    setFilteredDeals(filtered)
-  }, [deals, searchTerm, filters, sortBy])
-
-  const getStatusColor = (status: Deal["status"]) => {
-    switch (status) {
-      case "Active":
-        return "bg-success/10 text-success"
-      case "Pending":
-        return "bg-warning/10 text-warning-foreground"
-      case "Under Review":
-        return "bg-info/10 text-info"
-      case "Closed":
-        return "bg-muted text-muted-foreground"
-      default:
-        return "bg-muted text-muted-foreground"
+  const filteredDeals = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    if (!term) {
+      return deals
     }
+    return deals.filter((deal) => {
+      const haystack = `${deal.name} ${deal.location} ${deal.type} ${deal.status} ${deal.sponsor}`.toLowerCase()
+      return haystack.includes(term)
+    })
+  }, [deals, searchTerm])
+  const selectedDealAnalysis = selectedDeal ? generatePreAnalysis(selectedDeal) : null
+
+  const getStatusBadgeClass = (status: Deal["status"]) => {
+    if (status === "Active") {
+      return "bg-emerald-500/15 text-emerald-200 border border-emerald-500/30"
+    }
+    if (status === "Closed") {
+      return "bg-slate-800 text-slate-300 border border-slate-700"
+    }
+    if (status === "Watch") {
+      return "bg-orange-500/15 text-orange-200 border border-orange-500/30"
+    }
+    return "bg-amber-500/15 text-amber-200 border border-amber-500/30"
   }
 
-  const getRiskProfileColor = (risk: Deal["riskProfile"]) => {
-    switch (risk) {
-      case "Core":
-        return "bg-primary/10 text-primary"
-      case "Core-Plus":
-        return "bg-success/10 text-success"
-      case "Value-Add":
-        return "bg-secondary/10 text-secondary"
-      case "Opportunistic":
-        return "bg-destructive/10 text-destructive"
-      default:
-        return "bg-muted text-muted-foreground"
-    }
+  const updateNewDeal = <K extends keyof Omit<Deal, "id">>(field: K, value: Omit<Deal, "id">[K]) => {
+    setNewDeal((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleAddDeal = (newDeal: Omit<Deal, "id">) => {
-    const deal: Deal = {
+  const handleAddDeal = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const dealToAdd: Deal = {
       ...newDeal,
-      id: Date.now().toString(),
+      id: Date.now(),
     }
-    setDeals((prev) => [...prev, deal])
-    setIsAddDialogOpen(false)
-  }
-
-  const handleSubmitOfferingMemorandum = (dealId: string, omData: any) => {
-    // Store the offering memorandum submission
-    const submissions = JSON.parse(localStorage.getItem('om-submissions') || '[]')
-    const submission = {
-      id: Date.now().toString(),
-      dealId,
-      dealTitle: deals.find(d => d.id === dealId)?.title,
-      submittedAt: new Date().toISOString(),
-      status: 'pending',
-      ...omData
-    }
-    submissions.push(submission)
-    localStorage.setItem('om-submissions', JSON.stringify(submissions))
-    setIsOMDialogOpen(false)
-    setSelectedDealForOM(null)
-  }
-
-  const handleLikeDeal = (dealId: string) => {
-    setDeals(prevDeals => 
-      prevDeals.map(deal => 
-        deal.id === dealId 
-          ? { 
-              ...deal, 
-              isLiked: !deal.isLiked, 
-              likes: deal.isLiked ? deal.likes - 1 : deal.likes + 1 
-            }
-          : deal
-      )
-    )
-  }
-
-  const handleBookmarkDeal = (dealId: string) => {
-    setDeals(prevDeals => 
-      prevDeals.map(deal => 
-        deal.id === dealId 
-          ? { ...deal, isBookmarked: !deal.isBookmarked }
-          : deal
-      )
-    )
-  }
-
-  const handleViewDeal = (dealId: string) => {
-    setDeals(prevDeals => 
-      prevDeals.map(deal => 
-        deal.id === dealId 
-          ? { ...deal, views: deal.views + 1 }
-          : deal
-      )
-    )
-  }
-
-  const handleClearFilters = () => {
-    setFilters({
-      status: [],
-      assetType: [],
-      location: [],
-      riskProfile: [],
-      investmentSize: { min: "", max: "" },
-      role: [],
+    setDeals((prev) => [...prev, dealToAdd])
+    toast({
+      title: "Deal added",
+      description: `${dealToAdd.name} is now visible in Live Opportunities.`,
     })
-    setSearchTerm("")
+    setIsAddDialogOpen(false)
+    setNewDeal(createEmptyDeal())
+  }
+
+  const handleAddDialogChange = (open: boolean) => {
+    setIsAddDialogOpen(open)
+    if (!open) {
+      setNewDeal(createEmptyDeal())
+    }
+  }
+
+  const handleDownloadDeal = (deal: Deal, analysis?: DealAnalysis) => {
+    const pdfString = buildDealPdf(deal, analysis)
+    const blob = new Blob([pdfString], { type: "application/pdf" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `${deal.name.replace(/\s+/g, "_").toLowerCase()}_deal_summary.pdf`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExpressInterest = (deal: Deal) => {
+    setInterestedDeals((prev) => {
+      const alreadyInterested = prev.includes(deal.id)
+      if (alreadyInterested) {
+        toast({
+          title: "Interest withdrawn",
+          description: `You removed ${deal.name} from your interest list.`,
+        })
+        return prev.filter((id) => id !== deal.id)
+      }
+
+      toast({
+        title: "Interest submitted",
+        description: `We'll notify the sponsor of your intent on ${deal.name}.`,
+      })
+      return [...prev, deal.id]
+    })
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">All deals</h1>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-secondary hover:bg-secondary/90 text-secondary-foreground">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Deal
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Add New Deal</DialogTitle>
-            </DialogHeader>
-            <DealForm onSubmit={handleAddDeal} />
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <SearchFilters
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        filters={filters}
-        onFiltersChange={setFilters}
-        sortBy={sortBy}
-        onSortChange={setSortBy}
-        resultCount={filteredDeals.length}
-        onClearFilters={handleClearFilters}
-      />
-
-      {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Left Column - Deal Summary */}
-        <div className="space-y-6">
-          <Card className="bg-muted">
-            <CardContent className="p-6">
-              <div className="text-center space-y-4">
-                <div>
-                  <div className="text-2xl font-bold text-foreground">{deals.length}</div>
-                  <div className="text-sm text-muted-foreground">Total Deals</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-success">
-                    {deals.filter((d) => d.status === "Active").length}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Active</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-info">
-                    {deals.filter((d) => d.status === "Under Review").length}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Under Review</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Button className="w-full bg-secondary hover:bg-secondary/90 text-secondary-foreground flex items-center justify-center space-x-2">
-            <span>All Deals</span>
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Right Columns - Deal Cards */}
-        <div className="lg:col-span-3">
-          <div className="mb-4 flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{filteredDeals.length} deals found</p>
-            <div className="flex space-x-2">
-              <Button size="sm" variant="outline">
-                Filter
-              </Button>
-              <Button size="sm" variant="outline">
-                Sort
-              </Button>
+    <div className="min-h-full px-8 py-10 space-y-10">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div>
+          <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70 mb-2">Deal Intelligence</p>
+              <h1 className="text-4xl font-semibold text-white">Live Opportunities</h1>
+              <p className="text-slate-300 mt-3 max-w-xl">
+                Monitor actionable deal flow, diligence timelines, and sponsor performance — all in the unified CapIV™
+                dark workspace.
+              </p>
             </div>
+            <Dialog open={isAddDialogOpen} onOpenChange={handleAddDialogChange}>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Deal
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg bg-slate-900 border border-slate-800 text-slate-200">
+                <DialogHeader>
+                  <DialogTitle className="text-white">Add New Deal</DialogTitle>
+                  <DialogDescription className="text-slate-400">
+                    Capture the headline details and add the opportunity to the live pipeline.
+                  </DialogDescription>
+                </DialogHeader>
+                <form className="space-y-4" onSubmit={handleAddDeal}>
+                  <div className="space-y-2">
+                    <Label htmlFor="deal-name">Deal name</Label>
+                    <Input
+                      id="deal-name"
+                      required
+                      placeholder="e.g. Lakeside Industrial Portfolio"
+                      value={newDeal.name}
+                      onChange={(event) => updateNewDeal("name", event.target.value)}
+                      className="bg-slate-950 border-slate-800 text-slate-100"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="deal-location">Location</Label>
+                      <Input
+                        id="deal-location"
+                        required
+                        placeholder="City, State"
+                        value={newDeal.location}
+                        onChange={(event) => updateNewDeal("location", event.target.value)}
+                        className="bg-slate-950 border-slate-800 text-slate-100"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="deal-type">Asset type</Label>
+                      <Input
+                        id="deal-type"
+                        required
+                        placeholder="Multifamily, Industrial..."
+                        value={newDeal.type}
+                        onChange={(event) => updateNewDeal("type", event.target.value)}
+                        className="bg-slate-950 border-slate-800 text-slate-100"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="deal-status">Status</Label>
+                      <select
+                        id="deal-status"
+                        value={newDeal.status}
+                        onChange={(event) => updateNewDeal("status", event.target.value as Deal["status"])}
+                        className="w-full rounded-md border border-slate-800 bg-slate-950 text-slate-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Due Diligence">Due Diligence</option>
+                        <option value="Closed">Closed</option>
+                        <option value="Watch">Watch</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="deal-sponsor">Sponsor</Label>
+                      <Input
+                        id="deal-sponsor"
+                        required
+                        placeholder="Sponsor name"
+                        value={newDeal.sponsor}
+                        onChange={(event) => updateNewDeal("sponsor", event.target.value)}
+                        className="bg-slate-950 border-slate-800 text-slate-100"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="deal-investment">Investment</Label>
+                      <Input
+                        id="deal-investment"
+                        placeholder="$10M"
+                        value={newDeal.investment}
+                        onChange={(event) => updateNewDeal("investment", event.target.value)}
+                        className="bg-slate-950 border-slate-800 text-slate-100"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="deal-irr">Target IRR</Label>
+                      <Input
+                        id="deal-irr"
+                        placeholder="14%"
+                        value={newDeal.irr}
+                        onChange={(event) => updateNewDeal("irr", event.target.value)}
+                        className="bg-slate-950 border-slate-800 text-slate-100"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="deal-timeline">Timeline</Label>
+                      <Input
+                        id="deal-timeline"
+                        placeholder="Q4 2025"
+                        value={newDeal.timeline}
+                        onChange={(event) => updateNewDeal("timeline", event.target.value)}
+                        className="bg-slate-950 border-slate-800 text-slate-100"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="deal-description">Investment brief</Label>
+                    <Textarea
+                      id="deal-description"
+                      placeholder="Key thesis, business plan, and any current diligence notes..."
+                      value={newDeal.description}
+                      onChange={(event) => updateNewDeal("description", event.target.value)}
+                      className="bg-slate-950 border-slate-800 text-slate-100"
+                      rows={4}
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-slate-300 hover:text-white hover:bg-slate-800"
+                      onClick={() => handleAddDialogChange(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white">
+                      Save Deal
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {filteredDeals.map((deal) => (
-              <DealCard
-                key={deal.id}
-                deal={deal}
-                onViewDetails={() => setSelectedDeal(deal)}
-                getStatusColor={getStatusColor}
-                getRiskProfileColor={getRiskProfileColor}
-                onLike={handleLikeDeal}
-                onBookmark={handleBookmarkDeal}
-                onView={handleViewDeal}
+          <div className="rounded-3xl border border-slate-800/70 bg-slate-900/70 p-6 shadow-lg shadow-blue-500/5">
+            <div className="relative max-w-xl">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+              <Input
+                placeholder="Search deals, sponsors, or markets..."
+                className="pl-12 bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
               />
-            ))}
+            </div>
+            <p className="mt-3 text-xs uppercase tracking-[0.28em] text-slate-500">
+              {filteredDeals.length} opportunities
+            </p>
           </div>
-        </div>
-      </div>
 
-      {/* Deal Details Dialog */}
-      <Dialog open={!!selectedDeal} onOpenChange={() => setSelectedDeal(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selectedDeal?.title}</DialogTitle>
-          </DialogHeader>
-          {selectedDeal && <DealDetails deal={selectedDeal} getRiskProfileColor={getRiskProfileColor} />}
-        </DialogContent>
-      </Dialog>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {filteredDeals.map((deal) => {
+              const isInterested = interestedDeals.includes(deal.id)
+              return (
+                <Card
+                  key={deal.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedDeal(deal)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      setSelectedDeal(deal)
+                    }
+                  }}
+                  className="bg-slate-900/80 border border-slate-800 transition-all hover:-translate-y-1 hover:border-blue-500/40 hover:shadow-lg hover:shadow-blue-500/10 cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                >
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <CardTitle className="text-xl text-white">{deal.name}</CardTitle>
+                        <div className="mt-2 flex items-center text-sm text-slate-400">
+                          <MapPin className="w-4 h-4 mr-2 text-blue-400" />
+                          <span>{deal.location}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <Badge className={getStatusBadgeClass(deal.status)}>{deal.status}</Badge>
+                        {isInterested && (
+                          <Badge className="bg-blue-500/10 text-blue-200 border border-blue-500/40 text-[11px]">
+                            Interested
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-slate-400 uppercase tracking-[0.2em] text-xs mb-1">Investment</p>
+                        <p className="text-lg font-semibold text-slate-100 flex items-center">
+                          <DollarSign className="w-4 h-4 mr-2 text-blue-300" />
+                          {deal.investment}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400 uppercase tracking-[0.2em] text-xs mb-1">Target IRR</p>
+                        <p className="text-lg font-semibold text-slate-100 flex items-center">
+                          <TrendingUp className="w-4 h-4 mr-2 text-purple-300" />
+                          {deal.irr}
+                        </p>
+                      </div>
+                    </div>
 
-      {/* Offering Memorandum Submission Dialog */}
-      <Dialog open={isOMDialogOpen} onOpenChange={setIsOMDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Submit Offering Memorandum</DialogTitle>
-          </DialogHeader>
-          {selectedDealForOM && (
-            <OfferingMemorandumForm 
-              deal={selectedDealForOM} 
-              onSubmit={(omData) => handleSubmitOfferingMemorandum(selectedDealForOM.id, omData)} 
-            />
+                    <div className="pt-4 border-t border-slate-800 text-sm text-slate-300 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Sponsor</span>
+                        <span className="font-medium text-slate-100">{deal.sponsor}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Timeline</span>
+                        <span className="flex items-center font-medium text-slate-100">
+                          <Calendar className="w-4 h-4 mr-2 text-blue-300" />
+                          {deal.timeline}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-400 leading-relaxed line-clamp-3">{deal.description}</p>
+                    </div>
+
+                    <div className="pt-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={isInterested ? "default" : "outline"}
+                        className={isInterested ? "bg-blue-600 text-white" : "border-slate-600 text-slate-200"}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleExpressInterest(deal)
+                        }}
+                      >
+                        {isInterested ? "Interest Confirmed" : "Express Interest"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          {filteredDeals.length === 0 && (
+            <Card className="border border-slate-800 bg-slate-900/80">
+              <CardContent className="py-12 text-center space-y-4">
+                <p className="text-lg font-semibold text-white">No opportunities match your filters yet.</p>
+                <p className="text-sm text-slate-400">
+                  Adjust the search criteria or add a new mandate to keep the pipeline populated.
+                </p>
+              </CardContent>
+            </Card>
           )}
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
 
-function DealCard({
-  deal,
-  onViewDetails,
-  getStatusColor,
-  getRiskProfileColor,
-  onLike,
-  onBookmark,
-  onView,
-}: {
-  deal: Deal
-  onViewDetails: () => void
-  getStatusColor: (status: Deal["status"]) => string
-  getRiskProfileColor: (risk: Deal["riskProfile"]) => string
-  onLike: (dealId: string) => void
-  onBookmark: (dealId: string) => void
-  onView: (dealId: string) => void
-}) {
-  return (
-    <Card className="hover:shadow-lg transition-all duration-200 cursor-pointer group">
-      {/* Image Header */}
-      {deal.images && deal.images.length > 0 && (
-        <div className="relative h-48 overflow-hidden rounded-t-lg">
-          <img 
-            src={deal.images[0]} 
-            alt={deal.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-          />
-          <div className="absolute top-3 right-3 flex gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 w-8 p-0 bg-white/90 hover:bg-white"
-              onClick={(e) => {
-                e.stopPropagation()
-                onBookmark(deal.id)
-              }}
-            >
-              <Bookmark className={`h-4 w-4 ${deal.isBookmarked ? 'fill-current text-blue-600' : ''}`} />
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 w-8 p-0 bg-white/90 hover:bg-white"
-              onClick={(e) => {
-                e.stopPropagation()
-                onLike(deal.id)
-              }}
-            >
-              <Heart className={`h-4 w-4 ${deal.isLiked ? 'fill-current text-red-500' : ''}`} />
-            </Button>
-          </div>
-          <div className="absolute bottom-3 left-3">
-            <Badge className={getStatusColor(deal.status)}>{deal.status}</Badge>
-          </div>
-        </div>
-      )}
-
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle 
-              className="text-lg font-semibold text-foreground mb-2 line-clamp-2 cursor-pointer hover:text-blue-600 transition-colors"
-              onClick={(e) => {
-                e.stopPropagation()
-                onView(deal.id)
-                onViewDetails()
-              }}
-            >
-              {deal.title}
-            </CardTitle>
-            <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-2">
-              <MapPin className="h-4 w-4" />
-              <span>{deal.location}</span>
-            </div>
-          </div>
-          {!deal.images && <Badge className={getStatusColor(deal.status)}>{deal.status}</Badge>}
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-3">
-        {/* Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Progress</span>
-            <span className="font-medium">{deal.progress}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-              style={{ width: `${deal.progress}%` }}
-            ></div>
-          </div>
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>{deal.currentRaise}</span>
-            <span>{deal.maxRaise}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Building className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">{deal.assetType}</span>
-          </div>
-          <Badge className={getRiskProfileColor(deal.riskProfile)}>{deal.riskProfile}</Badge>
-        </div>
-
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="flex items-center space-x-2">
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-foreground">{deal.dealSize}</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-success">{deal.targetReturn}</span>
-          </div>
-        </div>
-
-        {/* Interactive Stats */}
-        <div className="flex items-center justify-between pt-2 border-t">
-          <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-            <div className="flex items-center space-x-1">
-              <Eye className="h-4 w-4" />
-              <span>{deal.views.toLocaleString()}</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Users className="h-4 w-4" />
-              <span>{deal.investors}</span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 px-2"
-              onClick={(e) => {
-                e.stopPropagation()
-                onLike(deal.id)
-              }}
-            >
-              <Heart className={`h-4 w-4 ${deal.isLiked ? 'fill-current text-red-500' : ''}`} />
-              <span className="ml-1">{deal.likes}</span>
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 px-2"
-              onClick={(e) => {
-                e.stopPropagation()
-                onBookmark(deal.id)
-              }}
-            >
-              <Bookmark className={`h-4 w-4 ${deal.isBookmarked ? 'fill-current text-blue-600' : ''}`} />
-            </Button>
-          </div>
-        </div>
-
-        <div className="pt-2">
-          <p className="text-xs text-muted-foreground mb-1">Sponsor:</p>
-          <p className="text-sm font-medium text-foreground">{deal.sponsor}</p>
-        </div>
-
-        <div className="pt-2">
-          <p className="text-xs text-muted-foreground mb-1">Min. Investment:</p>
-          <p className="text-sm font-medium text-foreground">{deal.minimumInvestment}</p>
-        </div>
-
-        <div className="pt-2 border-t">
-          <p className="text-xs text-card-foreground line-clamp-2">{deal.description}</p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-2 pt-3">
-          <Button 
-            size="sm" 
-            className="flex-1"
-            onClick={(e) => {
-              e.stopPropagation()
-              onView(deal.id)
-              onViewDetails()
-            }}
-          >
-            <Eye className="h-4 w-4 mr-1" />
-            View Details
-          </Button>
-          <Button 
-            size="sm" 
-            variant="outline"
-            onClick={(e) => {
-              e.stopPropagation()
-              // Add share functionality
-            }}
-          >
-            <Share2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function DealDetails({
-  deal,
-  getRiskProfileColor,
-}: {
-  deal: Deal
-  getRiskProfileColor: (risk: Deal["riskProfile"]) => string
-}) {
-  return (
-    <div className="space-y-6">
-      {/* Header with Image */}
-      {deal.images && deal.images.length > 0 && (
-        <div className="relative h-64 overflow-hidden rounded-lg">
-          <img 
-            src={deal.images[0]} 
-            alt={deal.title}
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-black/20"></div>
-          <div className="absolute bottom-4 left-4 text-white">
-            <h1 className="text-2xl font-bold mb-2">{deal.title}</h1>
-            <div className="flex items-center space-x-4 text-sm">
-              <div className="flex items-center space-x-1">
-                <MapPin className="h-4 w-4" />
-                <span>{deal.location}</span>
-              </div>
-              <Badge className="bg-white/90 text-black">{deal.status}</Badge>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Progress and Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Fundraising Progress</span>
-                <span className="text-lg font-bold">{deal.progress}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div 
-                  className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
-                  style={{ width: `${deal.progress}%` }}
-                ></div>
-              </div>
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>{deal.currentRaise}</span>
-                <span>{deal.maxRaise}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Users className="h-5 w-5 text-blue-600" />
-                <span className="text-sm font-medium">Active Investors</span>
-              </div>
-              <p className="text-2xl font-bold">{deal.investors}</p>
-              <p className="text-xs text-muted-foreground">Investors committed</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Eye className="h-5 w-5 text-green-600" />
-                <span className="text-sm font-medium">Views</span>
-              </div>
-              <p className="text-2xl font-bold">{deal.views.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">Total views</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Deal Overview */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <Building className="h-5 w-5" />
-              <span>Deal Overview</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Location</Label>
-              <p className="text-sm text-foreground flex items-center space-x-1">
-                <MapPin className="h-4 w-4" />
-                <span>{deal.location}</span>
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Asset Type</Label>
-              <p className="text-sm text-foreground">{deal.assetType}</p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Deal Size</Label>
-              <p className="text-sm font-semibold text-foreground">{deal.dealSize}</p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Risk Profile</Label>
-              <Badge className={getRiskProfileColor(deal.riskProfile)}>{deal.riskProfile}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Investment Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center space-x-2">
-              <DollarSign className="h-5 w-5" />
-              <span>Investment Details</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Sponsor</Label>
-              <p className="text-sm text-foreground">{deal.sponsor}</p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Target Return</Label>
-              <p className="text-sm font-semibold text-success flex items-center space-x-1">
-                <TrendingUp className="h-4 w-4" />
-                <span>{deal.targetReturn}</span>
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Hold Period</Label>
-              <p className="text-sm text-foreground flex items-center space-x-1">
-                <Calendar className="h-4 w-4" />
-                <span>{deal.holdPeriod}</span>
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Min. Investment</Label>
-              <p className="text-sm font-semibold text-foreground">{deal.minimumInvestment}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Key Metrics */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center space-x-2">
-            <BarChart3 className="h-5 w-5" />
-            <span>Key Metrics</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground">Cap Rate</p>
-              <p className="text-lg font-bold">{deal.keyMetrics.capRate}</p>
-            </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground">NOI</p>
-              <p className="text-lg font-bold">{deal.keyMetrics.noi}</p>
-            </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground">Occupancy</p>
-              <p className="text-lg font-bold">{deal.keyMetrics.occupancy}</p>
-            </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-muted-foreground">Year Built</p>
-              <p className="text-lg font-bold">{deal.keyMetrics.yearBuilt}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Timeline */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center space-x-2">
-            <Activity className="h-5 w-5" />
-            <span>Project Timeline</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {deal.timeline.map((item, index) => (
-              <div key={index} className="flex items-center space-x-4">
-                <div className={`w-3 h-3 rounded-full ${
-                  item.status === 'completed' ? 'bg-green-500' :
-                  item.status === 'pending' ? 'bg-yellow-500' :
-                  'bg-gray-300'
-                }`}></div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{item.milestone}</p>
-                  <p className="text-xs text-muted-foreground">{item.date}</p>
+          <Dialog open={!!selectedDeal} onOpenChange={(open) => !open && setSelectedDeal(null)}>
+            <DialogContent className="w-[95vw] max-w-5xl h-[85vh] bg-slate-900 border border-slate-800 text-slate-200 p-8 overflow-hidden">
+              <DialogHeader className="space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                  <div>
+                    <DialogTitle className="text-2xl text-white">{selectedDeal?.name}</DialogTitle>
+                    <DialogDescription className="text-slate-400 text-sm">
+                      {selectedDeal?.location} · {selectedDeal?.type}
+                    </DialogDescription>
+                  </div>
+                  {selectedDeal && (
+                    <div className="flex flex-wrap gap-3">
+                      <Badge className={getStatusBadgeClass(selectedDeal.status)}>{selectedDeal.status}</Badge>
+                      <Button
+                        variant="outline"
+                        className="border-slate-700 text-slate-200 hover:bg-slate-800"
+                        onClick={() => handleDownloadDeal(selectedDeal, selectedDealAnalysis ?? undefined)}
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Download PDF
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                <Badge variant={
-                  item.status === 'completed' ? 'default' :
-                  item.status === 'pending' ? 'secondary' :
-                  'outline'
-                }>
-                  {item.status}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              </DialogHeader>
+              {selectedDeal && (
+                <div className="h-[calc(85vh-140px)] overflow-y-auto space-y-6 pr-1">
+                  <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-6">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6 space-y-4">
+                      <p className="text-sm text-slate-300 leading-relaxed">{selectedDeal.description}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs uppercase tracking-[0.18em] text-slate-500">
+                        <div className="space-y-1">
+                          <span>Investment</span>
+                          <p className="text-base normal-case tracking-normal text-slate-100">
+                            {selectedDeal.investment}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <span>Target IRR</span>
+                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.irr}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span>Timeline</span>
+                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.timeline}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span>Sponsor</span>
+                          <p className="text-base normal-case tracking-normal text-slate-100">{selectedDeal.sponsor}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6 space-y-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Sponsor Notes</p>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        {selectedDeal.sponsor} reports active engagement with lenders and key tenants to preserve yield
+                        targets. Relationship capital remains strong across the regional brokerage community.
+                      </p>
+                    </div>
+                  </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Description</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-card-foreground leading-relaxed">{deal.description}</p>
-        </CardContent>
-      </Card>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-white">Due Diligence Focus</p>
+                        <span className="text-xs text-slate-500 uppercase tracking-[0.2em]">Current sprint</span>
+                      </div>
+                      <ul className="space-y-3 text-sm text-slate-300">
+                        <li>• Lease audit and T-12 financial verification</li>
+                        <li>• Capex scope validation with third-party GC</li>
+                        <li>• Debt sizing with two relationship lenders</li>
+                        <li>• Market comp refresh and exit cap back-testing</li>
+                      </ul>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-white">Execution Plan</p>
+                        <span className="text-xs text-slate-500 uppercase tracking-[0.2em]">Next 12 months</span>
+                      </div>
+                      <ul className="space-y-3 text-sm text-slate-300">
+                        <li>• Stabilize occupancy above 93% with refreshed leasing packages</li>
+                        <li>• Implement smart building upgrades to reduce OpEx ~8%</li>
+                        <li>• Sequence phased distributions once DSCR exceeds 1.7x</li>
+                        <li>• Prepare refinance dossier for mid-cycle optionality</li>
+                      </ul>
+                    </div>
+                  </div>
 
-      <div className="flex justify-end space-x-2">
-        <Button variant="outline">
-          <Download className="w-4 h-4 mr-2" />
-          Download Materials
-        </Button>
-        <Button variant="outline" onClick={() => {
-          setSelectedDealForOM(deal)
-          setIsOMDialogOpen(true)
-        }}>
-          <Upload className="w-4 h-4 mr-2" />
-          Submit Offering Memorandum
-        </Button>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-          <MessageCircle className="w-4 h-4 mr-2" />
-          Express Interest
-        </Button>
-      </div>
+                  {selectedDealAnalysis && (
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6 space-y-5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-white">AI Pre-Underwriting</p>
+                          <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">Investment pre-analysis</p>
+                        </div>
+                        <Badge className="bg-purple-500/10 text-purple-200 border border-purple-500/30">Beta</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <p className="text-slate-500 uppercase tracking-[0.2em] text-xs mb-1">Score</p>
+                          <p className="text-lg font-semibold text-white">{selectedDealAnalysis.score}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 uppercase tracking-[0.2em] text-xs mb-1">Risk Band</p>
+                          <p className="text-lg font-semibold text-white">{selectedDealAnalysis.riskBand}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 uppercase tracking-[0.2em] text-xs mb-1">Liquidity Window</p>
+                          <p className="text-lg font-semibold text-white">{selectedDealAnalysis.liquidityWindow}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-300 leading-relaxed">{selectedDealAnalysis.aiSummary}</p>
+                      <p className="text-xs text-slate-500 uppercase tracking-[0.2em]">Stress Test Notes</p>
+                      <p className="text-sm text-slate-300">{selectedDealAnalysis.stressNotes}</p>
+                      <div className="flex flex-wrap gap-3">
+                        <Button
+                          className="bg-blue-600 hover:bg-blue-500 text-white"
+                          onClick={() => router.push(selectedDealAnalysis.underwritingSync)}
+                        >
+                          Open in Underwriting Hub
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="border-slate-700 text-slate-200 hover:bg-slate-800"
+                          onClick={() => handleDownloadDeal(selectedDeal, selectedDealAnalysis)}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Pre-Analysis
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
     </div>
-  )
-}
-
-function DealForm({ onSubmit }: { onSubmit: (deal: Omit<Deal, "id">) => void }) {
-  const [formData, setFormData] = useState({
-    title: "",
-    location: "",
-    assetType: "",
-    dealSize: "",
-    status: "Active" as Deal["status"],
-    sponsor: "",
-    targetReturn: "",
-    holdPeriod: "",
-    description: "",
-    dateAdded: new Date().toISOString().split("T")[0],
-    investmentType: "Equity" as Deal["investmentType"],
-    riskProfile: "Core" as Deal["riskProfile"],
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSubmit(formData)
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="title">Deal Title *</Label>
-          <Input
-            id="title"
-            value={formData.title}
-            onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="location">Location *</Label>
-          <Input
-            id="location"
-            value={formData.location}
-            onChange={(e) => setFormData((prev) => ({ ...prev, location: e.target.value }))}
-            required
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="assetType">Asset Type</Label>
-          <Input
-            id="assetType"
-            value={formData.assetType}
-            onChange={(e) => setFormData((prev) => ({ ...prev, assetType: e.target.value }))}
-          />
-        </div>
-        <div>
-          <Label htmlFor="dealSize">Deal Size</Label>
-          <Input
-            id="dealSize"
-            value={formData.dealSize}
-            onChange={(e) => setFormData((prev) => ({ ...prev, dealSize: e.target.value }))}
-            placeholder="$50M"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="sponsor">Sponsor</Label>
-          <Input
-            id="sponsor"
-            value={formData.sponsor}
-            onChange={(e) => setFormData((prev) => ({ ...prev, sponsor: e.target.value }))}
-          />
-        </div>
-        <div>
-          <Label htmlFor="targetReturn">Target Return</Label>
-          <Input
-            id="targetReturn"
-            value={formData.targetReturn}
-            onChange={(e) => setFormData((prev) => ({ ...prev, targetReturn: e.target.value }))}
-            placeholder="15-18%"
-          />
-        </div>
-      </div>
-
-      <div>
-        <Label htmlFor="description">Description</Label>
-        <Input
-          id="description"
-          value={formData.description}
-          onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-        />
-      </div>
-
-      <div className="flex justify-end space-x-2 pt-4">
-        <Button type="button" variant="outline">
-          Cancel
-        </Button>
-        <Button type="submit" className="bg-secondary hover:bg-secondary/90 text-secondary-foreground">
-          Add Deal
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-function OfferingMemorandumForm({ 
-  deal, 
-  onSubmit 
-}: { 
-  deal: Deal
-  onSubmit: (omData: any) => void 
-}) {
-  const [formData, setFormData] = useState({
-    companyName: "",
-    contactName: "",
-    email: "",
-    phone: "",
-    investmentAmount: "",
-    accreditedInvestor: false,
-    investmentExperience: "",
-    additionalNotes: "",
-    fileUpload: null as File | null
-  })
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSubmit(formData)
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null
-    setFormData(prev => ({ ...prev, fileUpload: file }))
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-        <h3 className="font-semibold text-gray-900 mb-2">Deal Information</h3>
-        <p className="text-sm text-gray-600">{deal.title}</p>
-        <p className="text-sm text-gray-500">{deal.location} • {deal.dealSize}</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="companyName">Company/Entity Name *</Label>
-          <Input
-            id="companyName"
-            value={formData.companyName}
-            onChange={(e) => setFormData((prev) => ({ ...prev, companyName: e.target.value }))}
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="contactName">Contact Name *</Label>
-          <Input
-            id="contactName"
-            value={formData.contactName}
-            onChange={(e) => setFormData((prev) => ({ ...prev, contactName: e.target.value }))}
-            required
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="email">Email Address *</Label>
-          <Input
-            id="email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="phone">Phone Number</Label>
-          <Input
-            id="phone"
-            type="tel"
-            value={formData.phone}
-            onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      <div>
-        <Label htmlFor="investmentAmount">Proposed Investment Amount *</Label>
-        <Input
-          id="investmentAmount"
-          value={formData.investmentAmount}
-          onChange={(e) => setFormData((prev) => ({ ...prev, investmentAmount: e.target.value }))}
-          placeholder="$100,000"
-          required
-        />
-      </div>
-
-      <div>
-        <Label htmlFor="investmentExperience">Investment Experience *</Label>
-        <select 
-          id="investmentExperience"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-          value={formData.investmentExperience}
-          onChange={(e) => setFormData((prev) => ({ ...prev, investmentExperience: e.target.value }))}
-          required
-        >
-          <option value="">Select experience level</option>
-          <option value="beginner">Beginner (0-2 years)</option>
-          <option value="intermediate">Intermediate (3-7 years)</option>
-          <option value="advanced">Advanced (8+ years)</option>
-          <option value="professional">Professional investor</option>
-        </select>
-      </div>
-
-      <div className="flex items-center space-x-2">
-        <input
-          type="checkbox"
-          id="accreditedInvestor"
-          checked={formData.accreditedInvestor}
-          onChange={(e) => setFormData((prev) => ({ ...prev, accreditedInvestor: e.target.checked }))}
-          className="rounded border-gray-300"
-        />
-        <Label htmlFor="accreditedInvestor" className="text-sm">
-          I am an accredited investor
-        </Label>
-      </div>
-
-      <div>
-        <Label htmlFor="fileUpload">Upload Supporting Documents</Label>
-        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-          <div className="space-y-1 text-center">
-            <FileText className="mx-auto h-12 w-12 text-gray-400" />
-            <div className="flex text-sm text-gray-600">
-              <label htmlFor="fileUpload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none">
-                <span>Upload files</span>
-                <input
-                  id="fileUpload"
-                  name="fileUpload"
-                  type="file"
-                  className="sr-only"
-                  onChange={handleFileChange}
-                  accept=".pdf,.doc,.docx"
-                />
-              </label>
-              <p className="pl-1">or drag and drop</p>
-            </div>
-            <p className="text-xs text-gray-500">PDF, DOC, DOCX up to 10MB</p>
-          </div>
-        </div>
-        {formData.fileUpload && (
-          <p className="mt-2 text-sm text-gray-600">
-            Selected: {formData.fileUpload.name}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <Label htmlFor="additionalNotes">Additional Notes</Label>
-        <textarea
-          id="additionalNotes"
-          rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-          value={formData.additionalNotes}
-          onChange={(e) => setFormData((prev) => ({ ...prev, additionalNotes: e.target.value }))}
-          placeholder="Any additional information or questions..."
-        />
-      </div>
-
-      <div className="flex justify-end space-x-2 pt-4">
-        <Button type="button" variant="outline">
-          Cancel
-        </Button>
-        <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
-          <Upload className="w-4 h-4 mr-2" />
-          Submit Offering Memorandum
-        </Button>
-      </div>
-    </form>
   )
 }
