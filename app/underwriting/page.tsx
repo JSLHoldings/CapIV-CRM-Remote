@@ -8,7 +8,7 @@ export default function UnderwritingPage() {
   return (
     <ProtectedRoute>
       <DashboardShell>
-        <CapIVIQWorkspace defaultTab="underwriting" />
+        <CapIVIQWorkspace />
       </DashboardShell>
     </ProtectedRoute>
   )

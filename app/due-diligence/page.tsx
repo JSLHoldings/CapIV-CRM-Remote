@@ -8,7 +8,7 @@ export default function DueDiligencePage() {
   return (
     <ProtectedRoute>
       <DashboardShell>
-        <CapIVIQWorkspace defaultTab="due-diligence" />
+        <CapIVIQWorkspace />
       </DashboardShell>
     </ProtectedRoute>
   )
