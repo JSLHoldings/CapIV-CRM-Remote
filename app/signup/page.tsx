@@ -20,6 +20,7 @@ export type AccountType =
   | "investor-family-office"
   | "capital-partner"
   | "service-provider"
+  | "ian"
 
 export default function SignupPage() {
   const [name, setName] = useState("")
@@ -83,6 +84,11 @@ export default function SignupPage() {
       id: "service-provider",
       title: "Service Provider",
       description: "Diligence partners across legal, valuation, and compliance.",
+    },
+    {
+      id: "ian",
+      title: "IAN (Restricted Access)",
+      description: "Limited access to CapIV Core and CapIV Access only.",
     },
   ]
 
