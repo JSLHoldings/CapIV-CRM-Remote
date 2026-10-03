@@ -43,10 +43,14 @@ export async function updateSession(request: NextRequest) {
   // API routes manage their own auth and must never be redirected to /login,
   // otherwise POSTs (e.g. /api/auth/signup) get bounced before they run.
   const isApiRoute = pathname.startsWith("/api")
+  // The IAN public landing page (program description + signup CTA) is
+  // intentionally unauthenticated. Everything under /ian/* beyond this
+  // exact path (profile, status, future-interest) stays protected.
+  const isIanPublicLanding = pathname === "/ian"
 
   // If the user is not logged in and is trying to access a protected page,
   // redirect them to the login page.
-  if (!user && !isAuthPage && !isApiRoute) {
+  if (!user && !isAuthPage && !isApiRoute && !isIanPublicLanding) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)

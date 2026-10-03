@@ -43,8 +43,10 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     { id: "capiv-iq", label: "JSL Tech IQ", href: "/capiv-iq" },
     { id: "capiv-eq", label: "JSL Tech EQ", href: "/capiv-eq" },
     { id: "account", label: "Account", href: "/account" },
+    { id: "ian-profile", label: "My IAN Profile", href: "/ian/profile" },
     // Admin console is only shown to users with the admin role.
     ...(isAdmin ? [{ id: "admin", label: "Admin", href: "/admin", isAdmin: true }] : []),
+    ...(isAdmin ? [{ id: "ian-admin", label: "IAN Review", href: "/admin/ian", isAdmin: true }] : []),
   ]
 
   return (
