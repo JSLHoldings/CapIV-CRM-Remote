@@ -19,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} bg-slate-950 text-slate-100`}>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} bg-slate-950 text-slate-100`} suppressHydrationWarning>
         <AuthProvider>
           <VerificationProvider>
             {children}

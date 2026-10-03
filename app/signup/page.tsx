@@ -50,11 +50,13 @@ export default function SignupPage() {
       return
     }
 
-    const success = await signup(email, password, name, accountType as AccountType)
-    if (success) {
+    const result = await signup(email, password, name, accountType as AccountType)
+    if (result.success) {
+      // Account is auto-confirmed and signed in — go straight into the app,
+      // where the one-time onboarding/verification flow is shown.
       router.push("/")
     } else {
-      setError("Failed to create account. Please try again.")
+      setError(result.error || "Failed to create account. Please try again.")
     }
   }
 
@@ -91,10 +93,10 @@ export default function SignupPage() {
       <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-3xl space-y-10">
           <div className="text-center space-y-3">
-            <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">CapIV™ Access</p>
-            <h1 className="text-3xl font-semibold text-white">Create Your CapIV Command Account</h1>
+            <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">JSL Tech™ Access</p>
+            <h1 className="text-3xl font-semibold text-white">Create Your JSL Tech Command Account</h1>
             <p className="text-slate-400">
-              Select the profile that best represents how you operate inside the CapIV ecosystem.
+              Select the profile that best represents how you operate inside the JSL Tech ecosystem.
             </p>
           </div>
 
@@ -102,7 +104,7 @@ export default function SignupPage() {
             <CardHeader>
               <CardTitle className="text-white">Create Account</CardTitle>
               <CardDescription className="text-slate-400">
-                Sign up to get started with the unified CapIV CRM workspace
+                Sign up to get started with the unified JSL Tech CRM workspace
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -161,7 +163,7 @@ export default function SignupPage() {
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@capiv.com"
+                      placeholder="you@jsltech.com"
                       disabled={isLoading}
                       className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
                     />

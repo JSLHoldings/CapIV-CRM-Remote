@@ -44,7 +44,7 @@ export default function LoginPage() {
       <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center space-y-2">
-            <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">CapIV™ Access</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-blue-400/70">JSL Tech™ Access</p>
             <h1 className="text-3xl font-semibold text-white">Sign in to Command</h1>
             <p className="text-slate-400">Secure entry to your private markets workspace.</p>
           </div>
@@ -73,16 +73,21 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@capiv.com"
+                    placeholder="you@jsltech.com"
                     disabled={isLoading}
                     className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password" className="text-slate-300">
-                    Password
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password" className="text-slate-300">
+                      Password
+                    </Label>
+                    <Link href="/forgot-password" className="text-xs text-blue-400 hover:text-blue-300">
+                      Forgot password?
+                    </Link>
+                  </div>
                   <Input
                     id="password"
                     type="password"
