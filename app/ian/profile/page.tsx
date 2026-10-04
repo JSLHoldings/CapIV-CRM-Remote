@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
+import { FileText, Upload, User, X } from "lucide-react"
 import Link from "next/link"
 
 const PARTICIPATION_ROLES = [
@@ -37,6 +38,16 @@ interface IanProfile {
   org_website?: string | null
   publication_opt_in?: boolean
   profile_review_status?: string
+  photo_pathname?: string | null
+}
+
+interface IanEvidence {
+  id: string
+  claim: string
+  file_url: string | null
+  evidence_state: string
+  superseded_by: string | null
+  created_at: string
 }
 
 export default function IanProfilePage() {
@@ -47,6 +58,28 @@ export default function IanProfilePage() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
+  const [documents, setDocuments] = useState<IanEvidence[]>([])
+  const [docsLoading, setDocsLoading] = useState(true)
+  const [docLabel, setDocLabel] = useState("")
+  const [docFile, setDocFile] = useState<File | null>(null)
+  const [docUploading, setDocUploading] = useState(false)
+  const [docError, setDocError] = useState<string | null>(null)
+  const docInputRef = useRef<HTMLInputElement>(null)
+
+  const loadDocuments = useCallback(() => {
+    setDocsLoading(true)
+    fetch("/api/ian/evidence")
+      .then((res) => res.json())
+      .then((data) => {
+        setDocuments(data.evidence ?? [])
+        setDocsLoading(false)
+      })
+      .catch(() => setDocsLoading(false))
+  }, [])
+
   useEffect(() => {
     fetch("/api/ian/profile")
       .then((res) => res.json())
@@ -55,7 +88,8 @@ export default function IanProfilePage() {
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [])
+    loadDocuments()
+  }, [loadDocuments])
 
   const isLocked = profile.profile_review_status === "submitted"
 
@@ -112,6 +146,96 @@ export default function IanProfilePage() {
     setMessage("Profile submitted for review.")
   }
 
+  const uploadFile = async (file: File, kind: "photo" | "document") => {
+    const body = new FormData()
+    body.set("file", file)
+    body.set("kind", kind)
+    const res = await fetch("/api/ian/upload", { method: "POST", body })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error ?? "Upload failed.")
+    return data.pathname as string
+  }
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setError(null)
+    setPhotoUploading(true)
+    try {
+      const pathname = await uploadFile(file, "photo")
+      const res = await fetch("/api/ian/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photo_pathname: pathname }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? "Failed to save photo.")
+      setProfile(data.profile)
+      setMessage("Photo updated.")
+      setTimeout(() => setMessage(null), 2500)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload photo.")
+    } finally {
+      setPhotoUploading(false)
+      if (photoInputRef.current) photoInputRef.current.value = ""
+    }
+  }
+
+  const removePhoto = async () => {
+    setPhotoUploading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/ian/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photo_pathname: null }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? "Failed to remove photo.")
+      setProfile(data.profile)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove photo.")
+    } finally {
+      setPhotoUploading(false)
+    }
+  }
+
+  // Uploading a document never deletes an existing one — if `supersedes` is
+  // set, the prior evidence row is marked superseded but stays in the
+  // record. Every version remains visible and downloadable below.
+  const uploadDocument = async (supersedesId?: string) => {
+    if (!docFile) return
+    setDocError(null)
+    setDocUploading(true)
+    try {
+      const pathname = await uploadFile(docFile, "document")
+      const res = await fetch("/api/ian/evidence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          claim: docLabel.trim() || docFile.name,
+          fileUrl: pathname,
+          supersedesEvidenceId: supersedesId ?? undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? "Failed to save document.")
+      setDocLabel("")
+      setDocFile(null)
+      if (docInputRef.current) docInputRef.current.value = ""
+      loadDocuments()
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : "Failed to upload document.")
+    } finally {
+      setDocUploading(false)
+    }
+  }
+
+  const activeDocuments = documents.filter((d) => !d.superseded_by)
+  const photoUrl = profile.photo_pathname
+    ? `/api/ian/file?pathname=${encodeURIComponent(profile.photo_pathname)}`
+    : null
+
   if (loading) {
     return (
       <ProtectedRoute>
@@ -149,6 +273,58 @@ export default function IanProfilePage() {
                 for updates.
               </div>
             )}
+
+            <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+              <p className="text-sm font-semibold text-white">Profile photo</p>
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-950">
+                  {photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- private blob, served through our own route
+                    <img src={photoUrl || "/placeholder.svg"} alt="Your profile photo" className="h-full w-full object-cover" />
+                  ) : (
+                    <User className="h-7 w-7 text-slate-600" aria-hidden="true" />
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handlePhotoSelect}
+                    className="sr-only"
+                    id="photo-upload"
+                    disabled={isLocked || photoUploading}
+                  />
+                  <Label htmlFor="photo-upload">
+                    <Button
+                      asChild
+                      type="button"
+                      variant="outline"
+                      disabled={isLocked || photoUploading}
+                      className="border-slate-700 text-slate-200 hover:bg-slate-800 cursor-pointer"
+                    >
+                      <span>
+                        <Upload className="mr-2 h-3.5 w-3.5" />
+                        {photoUploading ? "Uploading…" : photoUrl ? "Replace photo" : "Upload photo"}
+                      </span>
+                    </Button>
+                  </Label>
+                  {photoUrl && !isLocked && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={removePhoto}
+                      disabled={photoUploading}
+                      className="text-slate-400 hover:text-red-400"
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">JPEG, PNG, or WEBP. Up to 10MB. Stored privately — only you and IAN reviewers can view it.</p>
+            </section>
 
             <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
               <p className="text-sm font-semibold text-white">Identity & role</p>
@@ -303,6 +479,109 @@ export default function IanProfilePage() {
                 By submitting, you agree to Terms of Participation {TERMS_VERSION} and the Privacy Notice{" "}
                 {PRIVACY_VERSION}. This is not an offer, solicitation, or commitment of any kind.
               </p>
+            </section>
+
+            <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+              <div>
+                <p className="text-sm font-semibold text-white">Essential documents</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Supporting materials for reviewers (e.g. verification of accreditation, entity formation, bio).
+                  Replacing a document never deletes the old copy — it stays on file, marked superseded.
+                </p>
+              </div>
+
+              {docsLoading ? (
+                <p className="text-xs text-slate-500">Loading documents…</p>
+              ) : activeDocuments.length > 0 ? (
+                <ul className="space-y-2">
+                  {activeDocuments.map((doc) => (
+                    <li
+                      key={doc.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm text-slate-200">{doc.claim}</p>
+                          <p className="text-xs text-slate-500 capitalize">{doc.evidence_state.replace(/_/g, " ")}</p>
+                        </div>
+                      </div>
+                      {doc.file_url && (
+                        <a
+                          href={`/api/ian/file?pathname=${encodeURIComponent(doc.file_url)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 text-xs text-blue-400 hover:underline"
+                        >
+                          View
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-500">No documents uploaded yet.</p>
+              )}
+
+              {!isLocked && (
+                <div className="space-y-2 border-t border-slate-800 pt-4">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <Input
+                      value={docLabel}
+                      onChange={(e) => setDocLabel(e.target.value)}
+                      placeholder="What is this document? (e.g. Proof of accreditation)"
+                      className="bg-slate-950 border-slate-700 text-slate-100"
+                    />
+                    <input
+                      ref={docInputRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
+                      onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+                      className="sr-only"
+                      id="document-upload"
+                    />
+                    <Label htmlFor="document-upload" className="sm:hidden">
+                      <Button asChild type="button" variant="outline" className="w-full border-slate-700 text-slate-200 cursor-pointer">
+                        <span>{docFile ? docFile.name : "Choose file"}</span>
+                      </Button>
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="document-upload" className="hidden sm:block">
+                      <Button asChild type="button" variant="outline" className="border-slate-700 text-slate-200 cursor-pointer">
+                        <span>
+                          <Upload className="mr-2 h-3.5 w-3.5" />
+                          {docFile ? docFile.name : "Choose file"}
+                        </span>
+                      </Button>
+                    </Label>
+                    <Button
+                      type="button"
+                      onClick={() => uploadDocument()}
+                      disabled={!docFile || docUploading}
+                      className="bg-blue-600 hover:bg-blue-500 text-white"
+                    >
+                      {docUploading ? "Uploading…" : "Add document"}
+                    </Button>
+                    {docFile && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setDocFile(null)
+                          if (docInputRef.current) docInputRef.current.value = ""
+                        }}
+                        className="text-slate-400 hover:text-red-400"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {docError && <p className="text-sm text-red-400">{docError}</p>}
+                  <p className="text-xs text-slate-500">PDF, DOC, DOCX, JPEG, PNG, or WEBP. Up to 10MB.</p>
+                </div>
+              )}
             </section>
 
             {error && <p className="text-sm text-red-400">{error}</p>}

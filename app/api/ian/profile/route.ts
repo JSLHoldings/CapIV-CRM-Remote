@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
     "terms_version",
     "privacy_version",
     "publication_opt_in",
+    "photo_pathname",
   ] as const
 
   const patch: Record<string, unknown> = {}
