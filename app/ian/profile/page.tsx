@@ -24,6 +24,16 @@ const PARTICIPATION_ROLES = [
 const TERMS_VERSION = "v1.0-beta"
 const PRIVACY_VERSION = "v1.0-beta"
 
+const AUTHORITY_DOC_LABEL = "Proof of Authority to Act"
+const DOCUMENT_TYPES = [
+  "Government-Issued ID",
+  "Proof of Address",
+  "Organization Formation Document",
+  AUTHORITY_DOC_LABEL,
+  "Accreditation / Qualification Evidence",
+  "Other Supporting Material",
+]
+
 interface IanProfile {
   id?: string
   name_display?: string | null
@@ -69,6 +79,9 @@ export default function IanProfilePage() {
   const [docUploading, setDocUploading] = useState(false)
   const [docError, setDocError] = useState<string | null>(null)
   const docInputRef = useRef<HTMLInputElement>(null)
+
+  const needsAuthorityDoc = profile.acts_personally === false
+  const hasAuthorityDoc = documents.some((d) => !d.superseded_by && d.claim === AUTHORITY_DOC_LABEL)
 
   const loadDocuments = useCallback(() => {
     setDocsLoading(true)
@@ -518,10 +531,20 @@ export default function IanProfilePage() {
               <div>
                 <p className="text-sm font-semibold text-white">Essential documents</p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Supporting materials for reviewers (e.g. verification of accreditation, entity formation, bio).
-                  Replacing a document never deletes the old copy — it stays on file, marked superseded.
+                  Per the IAN framework, joining the network never requires a passport, bank statement, or
+                  detailed financial record. Only upload what a reviewer has specifically asked for or what is
+                  flagged as required below. Replacing a document never deletes the old copy — it stays on file,
+                  marked superseded.
                 </p>
               </div>
+
+              {needsAuthorityDoc && !hasAuthorityDoc && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  <span className="text-red-400">*</span> Because you indicated you act on behalf of an
+                  organization, reviewers require proof of your authority to represent it (e.g. a signed mandate or
+                  authorization letter) before your profile can be admitted.
+                </div>
+              )}
 
               {docsLoading ? (
                 <p className="text-xs text-slate-500">Loading documents…</p>
@@ -558,6 +581,26 @@ export default function IanProfilePage() {
 
               {!isLocked && (
                 <div className="space-y-2 border-t border-slate-800 pt-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-slate-400">Document type</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {DOCUMENT_TYPES.map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => setDocLabel(type)}
+                          className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                            docLabel === type
+                              ? "border-blue-500 bg-blue-500/20 text-blue-200"
+                              : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                          }`}
+                        >
+                          {type === AUTHORITY_DOC_LABEL && <span className="text-red-400 mr-0.5">*</span>}
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                     <Input
                       value={docLabel}

@@ -242,13 +242,20 @@ export default function IanCaseDetailPage() {
                 <h1 className="text-2xl font-semibold text-white mt-1">{profile.name_display ?? "Unnamed profile"}</h1>
                 <p className="text-sm text-slate-400">{profile.organization}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <Badge className="bg-slate-800 text-slate-300 border border-slate-700 capitalize">
                   {profile.profile_review_status.replace(/_/g, " ")}
                 </Badge>
                 <Badge className="bg-blue-500/10 text-blue-200 border border-blue-500/30 capitalize">
                   {profile.participation_status.replace(/_/g, " ")}
                 </Badge>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => window.open(`/admin/ian/${id}/print`, "_blank", "noopener,noreferrer")}
+                >
+                  Export PDF
+                </Button>
               </div>
             </div>
 
