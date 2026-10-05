@@ -330,7 +330,9 @@ export default function IanProfilePage() {
               <p className="text-sm font-semibold text-white">Identity & role</p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-slate-400">Display name</Label>
+                  <Label className="text-xs text-slate-400">
+                    Display name <span className="text-red-400">*</span>
+                  </Label>
                   <Input
                     disabled={isLocked}
                     value={profile.name_display ?? ""}
@@ -398,7 +400,9 @@ export default function IanProfilePage() {
             </section>
 
             <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-              <p className="text-sm font-semibold text-white">Participation roles</p>
+              <p className="text-sm font-semibold text-white">
+                Participation roles <span className="text-red-400">*</span>
+              </p>
               <p className="text-xs text-slate-500">Select every role that describes your interest in IAN.</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {PARTICIPATION_ROLES.map((role) => (
