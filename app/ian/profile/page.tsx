@@ -55,6 +55,7 @@ export default function IanProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [unsubmitting, setUnsubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -144,6 +145,20 @@ export default function IanProfilePage() {
     }
     setProfile((prev) => ({ ...prev, profile_review_status: "submitted" }))
     setMessage("Profile submitted for review.")
+  }
+
+  const unsubmit = async () => {
+    setUnsubmitting(true)
+    setError(null)
+    const res = await fetch("/api/ian/profile/unsubmit", { method: "POST" })
+    const data = await res.json()
+    setUnsubmitting(false)
+    if (!res.ok) {
+      setError(data.error ?? "Could not unsubmit.")
+      return
+    }
+    setProfile((prev) => ({ ...prev, profile_review_status: data.reviewEvent.to_status }))
+    setMessage("Your application has been pulled back. Edit the fields below and resubmit when ready.")
   }
 
   const uploadFile = async (file: File, kind: "photo" | "document") => {
@@ -264,13 +279,27 @@ export default function IanProfilePage() {
             </div>
 
             {isLocked && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                Your profile is under review and locked for editing. It reopens automatically if a reviewer requests
-                clarification. Check{" "}
-                <Link href="/ian/status" className="underline">
-                  your status
-                </Link>{" "}
-                for updates.
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 space-y-2">
+                <p>
+                  Your profile is under review and locked for editing. It reopens automatically if a reviewer
+                  requests clarification. Check{" "}
+                  <Link href="/ian/status" className="underline">
+                    your status
+                  </Link>{" "}
+                  for updates.
+                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-amber-500/20 pt-2">
+                  <p>Need to fix something? You can pull your application back before a reviewer picks it up.</p>
+                  <Button
+                    onClick={unsubmit}
+                    disabled={unsubmitting}
+                    size="sm"
+                    variant="outline"
+                    className="border-amber-400/40 text-amber-100 hover:bg-amber-500/20 bg-transparent"
+                  >
+                    {unsubmitting ? "Unsubmitting…" : "Unsubmit to edit"}
+                  </Button>
+                </div>
               </div>
             )}
 
