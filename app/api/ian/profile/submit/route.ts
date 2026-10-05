@@ -48,7 +48,9 @@ export async function POST() {
   await insertStatusEvent(admin, {
     profileId: profile.id,
     statusField: "profile_review",
-    fromStatus: currentReview?.to_status ?? null,
+    // Default to "draft" (never null) so this event always has a prior
+    // state an unsubmit/reverse can restore to, even on first submission.
+    fromStatus: currentReview?.to_status ?? "draft",
     toStatus: "submitted",
     actorId: user.id,
     rationale: `Participant submitted profile version ${nextVersion}`,
