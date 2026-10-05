@@ -64,6 +64,20 @@ export default function IanStatusPage() {
     setMessage("Your participation has been reactivated.")
   }
 
+  const unsubmit = async () => {
+    setBusy(true)
+    setMessage(null)
+    const res = await fetch("/api/ian/profile/unsubmit", { method: "POST" })
+    const data = await res.json()
+    setBusy(false)
+    if (!res.ok) {
+      setMessage(data.error ?? "Could not unsubmit.")
+      return
+    }
+    setProfile((prev) => (prev ? { ...prev, profile_review_status: data.reviewEvent.to_status } : prev))
+    setMessage("Your application has been pulled back. Edit your profile and resubmit when ready.")
+  }
+
   if (loading) {
     return (
       <ProtectedRoute>
@@ -113,6 +127,21 @@ export default function IanStatusPage() {
                 <StatusBadge value={profile.participation_status} />
               </div>
             </div>
+
+            {profile.profile_review_status === "submitted" && (
+              <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-200 flex flex-wrap items-center justify-between gap-3">
+                <p>Need to fix something? You can pull your application back before a reviewer picks it up.</p>
+                <Button
+                  onClick={unsubmit}
+                  disabled={busy}
+                  size="sm"
+                  variant="outline"
+                  className="border-blue-400/40 text-blue-100 hover:bg-blue-500/20 bg-transparent"
+                >
+                  {busy ? "Unsubmitting…" : "Unsubmit to edit"}
+                </Button>
+              </div>
+            )}
 
             {profile.profile_review_status === "clarification_requested" && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
