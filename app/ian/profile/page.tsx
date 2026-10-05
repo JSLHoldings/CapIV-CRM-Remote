@@ -78,6 +78,7 @@ export default function IanProfilePage() {
   const [docFile, setDocFile] = useState<File | null>(null)
   const [docUploading, setDocUploading] = useState(false)
   const [docError, setDocError] = useState<string | null>(null)
+  const [docDragging, setDocDragging] = useState(false)
   const docInputRef = useRef<HTMLInputElement>(null)
 
   const needsAuthorityDoc = profile.acts_personally === false
@@ -601,45 +602,37 @@ export default function IanProfilePage() {
                       ))}
                     </div>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <div className="space-y-1.5">
                     <Input
                       value={docLabel}
                       onChange={(e) => setDocLabel(e.target.value)}
                       placeholder="What is this document? (e.g. Proof of accreditation)"
                       className="bg-slate-950 border-slate-700 text-slate-100"
                     />
-                    <input
-                      ref={docInputRef}
-                      type="file"
-                      accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
-                      onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
-                      className="sr-only"
-                      id="document-upload"
-                    />
-                    <Label htmlFor="document-upload" className="sm:hidden">
-                      <Button asChild type="button" variant="outline" className="w-full border-slate-700 text-slate-200 cursor-pointer">
-                        <span>{docFile ? docFile.name : "Choose file"}</span>
-                      </Button>
-                    </Label>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="document-upload" className="hidden sm:block">
-                      <Button asChild type="button" variant="outline" className="border-slate-700 text-slate-200 cursor-pointer">
-                        <span>
-                          <Upload className="mr-2 h-3.5 w-3.5" />
-                          {docFile ? docFile.name : "Choose file"}
+
+                  <input
+                    ref={docInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null
+                      if (file) setDocFile(file)
+                      e.target.value = ""
+                    }}
+                    className="sr-only"
+                    id="document-upload"
+                  />
+
+                  {docFile ? (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-700/60 bg-slate-800/40 p-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                        <span className="truncate text-sm text-slate-200">{docFile.name}</span>
+                        <span className="shrink-0 text-xs text-slate-500">
+                          ({(docFile.size / 1024).toFixed(0)} KB)
                         </span>
-                      </Button>
-                    </Label>
-                    <Button
-                      type="button"
-                      onClick={() => uploadDocument()}
-                      disabled={!docFile || docUploading}
-                      className="bg-blue-600 hover:bg-blue-500 text-white"
-                    >
-                      {docUploading ? "Uploading…" : "Add document"}
-                    </Button>
-                    {docFile && (
+                      </div>
                       <Button
                         type="button"
                         variant="ghost"
@@ -648,14 +641,51 @@ export default function IanProfilePage() {
                           setDocFile(null)
                           if (docInputRef.current) docInputRef.current.value = ""
                         }}
-                        className="text-slate-400 hover:text-red-400"
+                        className="h-7 w-7 shrink-0 text-slate-400 hover:text-red-400"
                       >
                         <X className="h-4 w-4" />
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="document-upload"
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        setDocDragging(true)
+                      }}
+                      onDragLeave={() => setDocDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        setDocDragging(false)
+                        const file = e.dataTransfer.files?.[0]
+                        if (file) setDocFile(file)
+                      }}
+                      className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-colors ${
+                        docDragging
+                          ? "border-blue-500 bg-blue-500/10"
+                          : "border-slate-700 hover:border-slate-500 bg-slate-950/40"
+                      }`}
+                    >
+                      <Upload className="h-6 w-6 text-slate-500" aria-hidden="true" />
+                      <p className="text-sm text-slate-400">
+                        Drag &amp; drop a file here, or <span className="text-blue-400 underline">browse</span>
+                      </p>
+                      <p className="text-xs text-slate-600">PDF, DOC, DOCX, JPEG, PNG, or WEBP — up to 10MB</p>
+                    </label>
+                  )}
+
+                  {docFile && (
+                    <Button
+                      type="button"
+                      onClick={() => uploadDocument()}
+                      disabled={docUploading}
+                      className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl"
+                    >
+                      <Upload className="mr-2 h-4 w-4" />
+                      {docUploading ? "Uploading…" : "Upload document"}
+                    </Button>
+                  )}
                   {docError && <p className="text-sm text-red-400">{docError}</p>}
-                  <p className="text-xs text-slate-500">PDF, DOC, DOCX, JPEG, PNG, or WEBP. Up to 10MB.</p>
                 </div>
               )}
             </section>
