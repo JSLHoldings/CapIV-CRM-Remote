@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { IanFooter } from "@/components/ian-footer"
 
 interface FutureInterestItem {
   id: string
@@ -154,6 +155,7 @@ export default function FutureInterestPage() {
             </section>
           </div>
         </div>
+        <IanFooter />
       </DashboardShell>
     </ProtectedRoute>
   )

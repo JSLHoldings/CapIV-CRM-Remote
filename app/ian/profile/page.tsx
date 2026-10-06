@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { SignaturePad } from "@/components/signature-pad"
+import { IanFooter } from "@/components/ian-footer"
 import { FileText, Upload, User, X, ShieldCheck } from "lucide-react"
 import Link from "next/link"
 
@@ -892,6 +893,7 @@ export default function IanProfilePage() {
             )}
           </div>
         </div>
+        <IanFooter />
       </DashboardShell>
     </ProtectedRoute>
   )

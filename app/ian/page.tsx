@@ -6,6 +6,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { IanFooter } from "@/components/ian-footer"
 
 const roles = [
   { title: "Investors", description: "Explore participation ahead of formal deal access." },
@@ -97,6 +98,8 @@ export default function IanLandingPage() {
           </p>
         </div>
       </main>
+
+      <IanFooter />
     </div>
   )
 }

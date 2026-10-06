@@ -6,6 +6,7 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { IanFooter } from "@/components/ian-footer"
 
 interface IanProfile {
   id: string
@@ -159,6 +160,7 @@ export default function IanStatusPage() {
             </div>
           </div>
         </div>
+        <IanFooter />
       </DashboardShell>
     </ProtectedRoute>
   )
