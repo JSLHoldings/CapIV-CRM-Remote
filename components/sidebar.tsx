@@ -53,7 +53,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     <div className={cn("w-64 bg-slate-950 text-slate-100 border-r border-slate-800 flex flex-col", className)}>
       <div className="px-6 py-5 border-b border-slate-800">
         <div className="flex items-center justify-between">
-          <h1 className="text-base font-semibold tracking-[0.3em] text-blue-200 uppercase">JSL Tech</h1>
+          <h1 className="text-base font-semibold tracking-[0.3em] text-blue-200 uppercase">JSL Tech IAN</h1>
           {debugMode && (
             <Badge variant="destructive" className="text-xs bg-red-600/80 text-white border-none">
               DEBUG

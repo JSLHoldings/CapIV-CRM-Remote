@@ -46,7 +46,7 @@ export function DashboardShell({ children, className }: DashboardShellProps) {
           >
             {mobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-          <h1 className="text-sm font-semibold uppercase tracking-[0.3em] text-blue-200">JSL Tech</h1>
+          <h1 className="text-sm font-semibold uppercase tracking-[0.3em] text-blue-200">JSL Tech IAN</h1>
           <span className="w-10" aria-hidden />
         </header>
 
