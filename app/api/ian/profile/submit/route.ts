@@ -30,6 +30,13 @@ export async function POST() {
     )
   }
 
+  if (!profile.nda_signed_at || !profile.tos_signed_at) {
+    return NextResponse.json(
+      { error: "You must sign both the Beta NDA and the Terms of Service disclosure before submitting." },
+      { status: 422 },
+    )
+  }
+
   const { count } = await admin
     .from("ian_profile_versions")
     .select("id", { count: "exact", head: true })

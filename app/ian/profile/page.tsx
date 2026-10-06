@@ -9,7 +9,9 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
-import { FileText, Upload, User, X } from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { SignaturePad } from "@/components/signature-pad"
+import { FileText, Upload, User, X, ShieldCheck } from "lucide-react"
 import Link from "next/link"
 
 const PARTICIPATION_ROLES = [
@@ -49,6 +51,10 @@ interface IanProfile {
   publication_opt_in?: boolean
   profile_review_status?: string
   photo_pathname?: string | null
+  nda_signed_at?: string | null
+  nda_signature_name?: string | null
+  tos_signed_at?: string | null
+  tos_signature_name?: string | null
 }
 
 interface IanEvidence {
@@ -80,6 +86,16 @@ export default function IanProfilePage() {
   const [docError, setDocError] = useState<string | null>(null)
   const [docDragging, setDocDragging] = useState(false)
   const docInputRef = useRef<HTMLInputElement>(null)
+
+  const [ndaName, setNdaName] = useState("")
+  const [ndaImage, setNdaImage] = useState("")
+  const [ndaSigning, setNdaSigning] = useState(false)
+  const [ndaError, setNdaError] = useState<string | null>(null)
+
+  const [tosName, setTosName] = useState("")
+  const [tosImage, setTosImage] = useState("")
+  const [tosSigning, setTosSigning] = useState(false)
+  const [tosError, setTosError] = useState<string | null>(null)
 
   const needsAuthorityDoc = profile.acts_personally === false
   const hasAuthorityDoc = documents.some((d) => !d.superseded_by && d.claim === AUTHORITY_DOC_LABEL)
@@ -173,6 +189,41 @@ export default function IanProfilePage() {
     }
     setProfile((prev) => ({ ...prev, profile_review_status: data.reviewEvent.to_status }))
     setMessage("Your application has been pulled back. Edit the fields below and resubmit when ready.")
+  }
+
+  const signDocument = async (kind: "nda" | "tos") => {
+    const name = kind === "nda" ? ndaName : tosName
+    const image = kind === "nda" ? ndaImage : tosImage
+    const setSigning = kind === "nda" ? setNdaSigning : setTosSigning
+    const setSignError = kind === "nda" ? setNdaError : setTosError
+
+    setSignError(null)
+    if (!name.trim()) {
+      setSignError("Please type your full legal name.")
+      return
+    }
+    if (!image) {
+      setSignError("Please draw your signature above.")
+      return
+    }
+
+    setSigning(true)
+    try {
+      const res = await fetch("/api/ian/profile/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, signatureName: name.trim(), signatureImage: image }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? "Failed to record signature.")
+      setProfile(data.profile)
+      setMessage(kind === "nda" ? "Beta NDA signed." : "Terms of Service disclosure signed.")
+      setTimeout(() => setMessage(null), 2500)
+    } catch (err) {
+      setSignError(err instanceof Error ? err.message : "Failed to record signature.")
+    } finally {
+      setSigning(false)
+    }
   }
 
   const uploadFile = async (file: File, kind: "photo" | "document") => {
@@ -530,6 +581,128 @@ export default function IanProfilePage() {
 
             <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
               <div>
+                <p className="text-sm font-semibold text-white">
+                  Required agreements <span className="text-red-400">*</span>
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Both agreements must be signed before you can submit your profile for review.
+                </p>
+              </div>
+
+              {[
+                {
+                  kind: "nda" as const,
+                  title: "IAN Beta Non-Disclosure Agreement",
+                  signedAt: profile.nda_signed_at,
+                  signedName: profile.nda_signature_name,
+                  name: ndaName,
+                  setName: setNdaName,
+                  setImage: setNdaImage,
+                  signing: ndaSigning,
+                  signError: ndaError,
+                  body: (
+                    <>
+                      <p className="font-semibold text-foreground">IAN BETA NON-DISCLOSURE AGREEMENT</p>
+                      <p>
+                        As a condition of participating in the JSL Investor &amp; Allocator Network (IAN) beta, you
+                        agree to keep confidential all non-public information shared through IAN, including
+                        participant identities, deal flow, pricing, and platform functionality, and to use it solely
+                        to evaluate your own participation in IAN.
+                      </p>
+                      <p>
+                        You agree not to disclose IAN participant information to third parties without written
+                        consent, and to protect it with the same care you use for your own confidential information.
+                        This obligation survives for as long as the information remains non-public.
+                      </p>
+                      <p>
+                        This NDA does not cover information that is already public, was already in your possession,
+                        or that you develop independently without reference to IAN materials.
+                      </p>
+                    </>
+                  ),
+                },
+                {
+                  kind: "tos" as const,
+                  title: "IAN Beta Terms of Service Disclosure",
+                  signedAt: profile.tos_signed_at,
+                  signedName: profile.tos_signature_name,
+                  name: tosName,
+                  setName: setTosName,
+                  setImage: setTosImage,
+                  signing: tosSigning,
+                  signError: tosError,
+                  body: (
+                    <>
+                      <p className="font-semibold text-foreground">IAN BETA TERMS OF SERVICE DISCLOSURE</p>
+                      <p>
+                        IAN is an early-stage beta program. Participation is not an offer, solicitation, or
+                        commitment to any investment, allocation, or transaction, and admission to IAN does not
+                        guarantee access to any deal or opportunity.
+                      </p>
+                      <p>
+                        Features, review timelines, and participation status may change as the beta evolves. Profile
+                        information you submit is reviewed by IAN staff and may be shared internally to evaluate and
+                        process your participation.
+                      </p>
+                      <p>
+                        You may withdraw your participation or unsubmit a pending application at any time, as
+                        described in your account status page.
+                      </p>
+                    </>
+                  ),
+                },
+              ].map((doc) => (
+                <div key={doc.kind} className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-slate-200">{doc.title}</p>
+                    {doc.signedAt ? (
+                      <Badge className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 gap-1">
+                        <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+                        Signed
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-slate-800 text-slate-400 border border-slate-700">Not signed</Badge>
+                    )}
+                  </div>
+
+                  <ScrollArea className="h-32 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                    <div className="space-y-2 text-xs text-slate-400">{doc.body}</div>
+                  </ScrollArea>
+
+                  {doc.signedAt ? (
+                    <p className="text-xs text-slate-500">
+                      Signed by {doc.signedName} on {new Date(doc.signedAt).toLocaleDateString()}
+                      {!isLocked && " — you may re-sign below if your details change."}
+                    </p>
+                  ) : null}
+
+                  {!isLocked && (
+                    <div className="space-y-2 border-t border-slate-800 pt-3">
+                      <Input
+                        value={doc.name}
+                        onChange={(e) => doc.setName(e.target.value)}
+                        placeholder="Type your full legal name"
+                        className="bg-slate-950 border-slate-700 text-slate-100"
+                      />
+                      <SignaturePad onChange={doc.setImage} />
+                      {doc.signError && <p className="text-sm text-red-400">{doc.signError}</p>}
+                      <Button
+                        type="button"
+                        onClick={() => signDocument(doc.kind)}
+                        disabled={doc.signing}
+                        variant="outline"
+                        className="border-slate-700 text-slate-200 hover:bg-slate-800"
+                      >
+                        {doc.signing ? "Signing…" : doc.signedAt ? "Re-sign" : "Sign"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </section>
+
+            <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+              <div>
                 <p className="text-sm font-semibold text-white">Essential documents</p>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Per the IAN framework, joining the network never requires a passport, bank statement, or
@@ -703,7 +876,16 @@ export default function IanProfilePage() {
                 >
                   {saving ? "Saving…" : "Save draft"}
                 </Button>
-                <Button onClick={submitForReview} disabled={saving || submitting} className="bg-blue-600 hover:bg-blue-500 text-white">
+                <Button
+                  onClick={submitForReview}
+                  disabled={saving || submitting || !profile.nda_signed_at || !profile.tos_signed_at}
+                  className="bg-blue-600 hover:bg-blue-500 text-white"
+                  title={
+                    !profile.nda_signed_at || !profile.tos_signed_at
+                      ? "Sign both required agreements above before submitting."
+                      : undefined
+                  }
+                >
                   {submitting ? "Submitting…" : "Submit for review"}
                 </Button>
               </div>
