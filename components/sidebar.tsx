@@ -37,11 +37,11 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", href: "/" },
-    { id: "core", label: "JSL Tech Core", href: "/core" },
+    { id: "core", label: "JSL Tech Core", href: "/core", hidden: true },
     { id: "access", label: "JSL Tech Access", href: "/access" },
     { id: "deals", label: "Deal Source", href: "/deals" },
     { id: "capiv-iq", label: "JSL Tech IQ", href: "/capiv-iq" },
-    { id: "capiv-eq", label: "JSL Tech EQ", href: "/capiv-eq" },
+    { id: "capiv-eq", label: "JSL Tech EQ", href: "/capiv-eq", hidden: true },
     { id: "account", label: "Account", href: "/account" },
     { id: "ian-profile", label: "My IAN Profile", href: "/ian/profile" },
     // Admin console is only shown to users with the admin role.
@@ -64,7 +64,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-1">
-        {menuItems.map((item) => {
+        {menuItems.filter((item) => !("hidden" in item && item.hidden)).map((item) => {
           const isActive = pathname === item.href
 
           return (
