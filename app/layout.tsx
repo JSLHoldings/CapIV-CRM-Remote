@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
 import { SessionWarning } from "@/components/session-warning"
+import { AuthFooter } from "@/components/auth-footer"
 import { VerificationProvider } from "@/contexts/verification-context"
 
 export const metadata: Metadata = {
@@ -24,6 +25,7 @@ export default function RootLayout({
         <AuthProvider>
           <VerificationProvider>
             {children}
+            <AuthFooter />
             <SessionWarning />
           </VerificationProvider>
         </AuthProvider>

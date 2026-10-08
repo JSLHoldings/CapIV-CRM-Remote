@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Sidebar } from "@/components/sidebar"
+import { IanFooter } from "@/components/ian-footer"
 import { Menu, X } from "lucide-react"
 
 interface DashboardShellProps {
@@ -50,7 +51,10 @@ export function DashboardShell({ children, className }: DashboardShellProps) {
           <span className="w-10" aria-hidden />
         </header>
 
-        <div className={cn("flex-1 overflow-y-auto bg-slate-900/60", className)}>{children}</div>
+        <div className={cn("flex-1 overflow-y-auto bg-slate-900/60", className)}>
+          {children}
+          <IanFooter />
+        </div>
       </div>
     </div>
   )
