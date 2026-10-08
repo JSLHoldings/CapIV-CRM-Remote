@@ -12,7 +12,6 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { useAuth } from "@/hooks/use-auth"
 
 interface CapIVAccessProps {
   selectedDeal: string | null
@@ -74,10 +73,6 @@ const actionButtons = [
 
 export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
   const router = useRouter()
-  const { user } = useAuth()
-  
-  // Extract first name from user's name
-  const firstName = user?.name?.split(' ')[0] || 'User'
 
   const handleCardClick = (href: string) => {
     router.push(href)
@@ -90,19 +85,6 @@ export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
   return (
     <div className="flex-1 bg-slate-900 text-white p-8 overflow-y-auto">
       <div className="max-w-6xl mx-auto">
-        {/* Header Section */}
-        <div className="mb-12">
-          <h1 className="text-4xl font-bold text-white mb-4">
-            Welcome, {firstName}
-          </h1>
-          <p className="text-xl text-white mb-2">
-            This is JSL Tech™ Access — your gateway to verified opportunities and intelligent deal flow.
-          </p>
-          <p className="text-lg text-white italic">
-            Where relationships, credibility and capital connect.
-          </p>
-        </div>
-
         {/* Feature Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           {featureCards.map((card, index) => (
