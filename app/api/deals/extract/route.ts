@@ -1,4 +1,5 @@
 import { put } from '@vercel/blob'
+import { hasFeatureAccess } from '@/lib/ian/feature-access'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   extractTextFromFile,
@@ -21,6 +22,9 @@ const ALLOWED_TYPES = [
 const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB
 
 export async function POST(request: NextRequest) {
+  if (!(await hasFeatureAccess('submit_formal_deals'))) {
+    return NextResponse.json({ error: 'Deal Source access has not been granted.' }, { status: 403 })
+  }
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File

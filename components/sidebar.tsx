@@ -8,6 +8,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { useFeatureAccess } from "@/hooks/use-feature-access"
+import type { IanCapability } from "@/lib/ian/capabilities"
 
 interface SidebarProps {
   /** Extra classes to control visibility/positioning (desktop rail vs. mobile drawer). */
@@ -34,13 +36,21 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
   }, [])
 
   const isAdmin = user?.role === "admin"
+  const { can } = useFeatureAccess()
 
-  const menuItems = [
+  const menuItems: {
+    id: string
+    label: string
+    href: string
+    hidden?: boolean
+    isAdmin?: boolean
+    capability?: IanCapability
+  }[] = [
     { id: "dashboard", label: "Dashboard", href: "/" },
     { id: "core", label: "JSL Tech Core", href: "/core", hidden: true },
-    { id: "access", label: "JSL Tech Access", href: "/access" },
-    { id: "deals", label: "Deal Source", href: "/deals" },
-    { id: "capiv-iq", label: "JSL Tech IQ", href: "/capiv-iq" },
+    { id: "access", label: "JSL Tech Access", href: "/access", capability: "browse_people_or_opportunities" },
+    { id: "deals", label: "Deal Source", href: "/deals", capability: "submit_formal_deals" },
+    { id: "capiv-iq", label: "JSL Tech IQ", href: "/capiv-iq", capability: "diligence_and_underwriting" },
     { id: "capiv-eq", label: "JSL Tech EQ", href: "/capiv-eq", hidden: true },
     { id: "account", label: "Account", href: "/account" },
     { id: "ian-profile", label: "My IAN Profile", href: "/ian/profile" },
@@ -64,7 +74,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-1">
-        {menuItems.filter((item) => !("hidden" in item && item.hidden)).map((item) => {
+        {menuItems.filter((item) => !item.hidden && (!item.capability || can(item.capability))).map((item) => {
           const isActive = pathname === item.href
 
           return (

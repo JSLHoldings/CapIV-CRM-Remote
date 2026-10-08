@@ -32,7 +32,10 @@ export function clearAdminSessionCookie(res: NextResponse) {
 // True only when the request carries a cookie issued by the admin sign-in
 // flow (secret key verified) for this exact user.
 export function hasAdminSession(req: NextRequest, userId: string): boolean {
-  const value = req.cookies.get(ADMIN_SESSION_COOKIE)?.value
+  return isValidAdminCookie(req.cookies.get(ADMIN_SESSION_COOKIE)?.value, userId)
+}
+
+export function isValidAdminCookie(value: string | undefined, userId: string): boolean {
   if (!value) return false
   const [id, sig] = value.split(".")
   if (id !== userId || !sig) return false

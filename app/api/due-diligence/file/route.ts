@@ -1,7 +1,11 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { get } from '@vercel/blob'
+import { hasFeatureAccess } from '@/lib/ian/feature-access'
 
 export async function GET(request: NextRequest) {
+  if (!(await hasFeatureAccess('diligence_and_underwriting'))) {
+    return NextResponse.json({ error: 'Diligence & underwriting access has not been granted.' }, { status: 403 })
+  }
   try {
     const pathname = request.nextUrl.searchParams.get('pathname')
 

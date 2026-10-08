@@ -69,6 +69,11 @@ interface IanEvidence {
 
 export default function IanProfilePage() {
   const [profile, setProfile] = useState<IanProfile>({ participation_roles: [], interests: {} })
+  const [lockedFeature, setLockedFeature] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLockedFeature(new URLSearchParams(window.location.search).get("locked"))
+  }, [])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -336,8 +341,14 @@ export default function IanProfilePage() {
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-blue-400/80">IAN Network</p>
                 <h1 className="text-2xl font-semibold text-white mt-1">My IAN Profile</h1>
+            </div>
+            {lockedFeature && (
+              <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                {lockedFeature} has not been enabled for your account yet. Complete and submit your profile; an IAN reviewer
+                will enable features once you are approved.
               </div>
-              {profile.profile_review_status && (
+            )}
+            {profile.profile_review_status && (
                 <Badge className="bg-slate-800 text-slate-200 border border-slate-700 capitalize">
                   {profile.profile_review_status.replace(/_/g, " ")}
                 </Badge>

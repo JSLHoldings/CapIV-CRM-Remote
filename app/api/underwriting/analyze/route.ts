@@ -2,6 +2,7 @@ import { generateText, Output } from "ai"
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getAIErrorInfo } from "@/lib/ai-error"
+import { hasFeatureAccess } from "@/lib/ian/feature-access"
 
 const analysisSchema = z.object({
   narrativeSummary: z
@@ -26,6 +27,9 @@ const analysisSchema = z.object({
 })
 
 export async function POST(request: NextRequest) {
+  if (!(await hasFeatureAccess("diligence_and_underwriting"))) {
+    return NextResponse.json({ error: "Diligence & underwriting access has not been granted." }, { status: 403 })
+  }
   try {
     const { deal } = await request.json()
 

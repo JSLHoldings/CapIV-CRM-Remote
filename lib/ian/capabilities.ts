@@ -27,12 +27,25 @@ export const IAN_RELEASE_GATE: Record<IanCapability, boolean> = {
   create_update_own_profile: true,
   respond_to_clarification: true,
   express_future_interest: true,
-  browse_people_or_opportunities: false,
-  submit_formal_deals: false,
-  diligence_and_underwriting: false,
-  automated_matching: false,
+  // Reachable only through an explicit admin grant (default deny per profile).
+  browse_people_or_opportunities: true,
+  submit_formal_deals: true,
+  diligence_and_underwriting: true,
+  automated_matching: true,
   transaction_agreements: false,
 }
+
+// Which app area each grantable capability unlocks.
+export const FEATURE_ROUTES: { capability: IanCapability; label: string; prefixes: string[] }[] = [
+  { capability: "browse_people_or_opportunities", label: "JSL Tech Access", prefixes: ["/access"] },
+  { capability: "submit_formal_deals", label: "Deal Source", prefixes: ["/deals"] },
+  {
+    capability: "diligence_and_underwriting",
+    label: "JSL Tech IQ",
+    prefixes: ["/capiv-iq", "/underwriting", "/due-diligence", "/calculator", "/portfolio-analysis"],
+  },
+  { capability: "automated_matching", label: "Matchmaking", prefixes: ["/matchmaking"] },
+]
 
 // Capabilities that can additionally be granted/revoked per-profile by an
 // admin (via ian_status_events). A capability not listed here is governed

@@ -1,4 +1,5 @@
 import { put } from '@vercel/blob'
+import { hasFeatureAccess } from '@/lib/ian/feature-access'
 import { type NextRequest, NextResponse } from 'next/server'
 
 const ALLOWED_TYPES = [
@@ -12,6 +13,9 @@ const ALLOWED_TYPES = [
 const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB
 
 export async function POST(request: NextRequest) {
+  if (!(await hasFeatureAccess('diligence_and_underwriting'))) {
+    return NextResponse.json({ error: 'Diligence & underwriting access has not been granted.' }, { status: 403 })
+  }
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File

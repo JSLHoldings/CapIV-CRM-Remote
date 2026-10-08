@@ -4,6 +4,7 @@ import { get } from '@vercel/blob'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAIErrorInfo } from '@/lib/ai-error'
+import { hasFeatureAccess } from '@/lib/ian/feature-access'
 
 const google = createGoogleGenerativeAI({ apiKey: process.env.API_KEY_2 })
 
@@ -41,6 +42,9 @@ const ALLOWED_MODELS = {
 } as const
 
 export async function POST(request: NextRequest) {
+  if (!(await hasFeatureAccess('diligence_and_underwriting'))) {
+    return NextResponse.json({ error: 'Diligence & underwriting access has not been granted.' }, { status: 403 })
+  }
   try {
     const { pathname, filename, fileType, model } = await request.json()
 
