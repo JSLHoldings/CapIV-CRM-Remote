@@ -24,6 +24,7 @@ interface User {
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string, rememberMe?: boolean) => Promise<boolean>
+  adminLogin: (email: string, password: string, secretKey: string) => Promise<boolean>
   signup: (
     email: string,
     password: string,
@@ -129,6 +130,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return true
   }
 
+  const adminLogin = async (email: string, password: string, secretKey: string): Promise<boolean> => {
+    setIsLoading(true)
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+
+    if (error || !data.session) {
+      setIsLoading(false)
+      return false
+    }
+
+    let verified = false
+    try {
+      const res = await fetch("/api/auth/admin-verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+        body: JSON.stringify({ key: secretKey }),
+      })
+      verified = res.ok
+    } catch {
+      verified = false
+    }
+
+    if (!verified) {
+      await supabase.auth.signOut()
+      setIsLoading(false)
+      return false
+    }
+
+    setIsLoading(false)
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("capiv_just_signed_up")
+    }
+    applySession(data.session)
+    void logActivity({
+      action: "Admin signed in",
+      category: "auth",
+      metadata: { email },
+    })
+    return true
+  }
+
   const signup = async (
     email: string,
     password: string,
@@ -198,6 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         login,
+        adminLogin,
         signup,
         logout,
         isLoading,
