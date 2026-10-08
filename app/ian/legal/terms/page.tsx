@@ -6,7 +6,7 @@ export default function IanTermsPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="border-b border-slate-800 px-6 py-5">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
-          <span className="text-sm font-semibold uppercase tracking-[0.3em] text-blue-200">JSL Tech IAN</span>
+          <span className="text-sm font-semibold uppercase tracking-[0.3em] text-blue-200">I.A.N - JSL Tech</span>
           <Link href="/ian" className="text-sm text-slate-400 hover:text-white">
             Back to IAN
           </Link>
