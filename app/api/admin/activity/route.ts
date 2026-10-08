@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { hasAdminSession } from "@/lib/admin-session"
 
 // Service-role client — bypasses RLS so admins can read all activity rows.
 function getAdminClient() {
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
   }
 
   const role = user.user_metadata?.role as string | undefined
-  if (role !== "admin") {
+  if (role !== "admin" || !hasAdminSession(req, user.id)) {
     return NextResponse.json({ error: "Forbidden — admin only" }, { status: 403 })
   }
 

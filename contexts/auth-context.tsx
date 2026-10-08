@@ -63,8 +63,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sessionExpiry, setSessionExpiry] = useState<Date | null>(null)
   const [isSessionExpired, setIsSessionExpired] = useState(false)
 
-  const applySession = useCallback((session: Session | null) => {
-    setUser(mapSessionToUser(session))
+  const requestIdRef = useRef(0)
+  const suppressAuthEventsRef = useRef(false)
+
+  // Admin-role accounts only keep the admin role when they signed in through
+  // the admin sign-in (secret key) flow; otherwise they are treated as users.
+  const applySession = useCallback(async (session: Session | null) => {
+    const requestId = ++requestIdRef.current
+    let mapped = mapSessionToUser(session)
+    if (mapped?.role === "admin" && session) {
+      let active = false
+      try {
+        const res = await fetch("/api/auth/admin-verify", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        active = (await res.json()).active === true
+      } catch {
+        active = false
+      }
+      if (!active) mapped = { ...mapped, role: "user" }
+    }
+    if (requestId !== requestIdRef.current) return
+    setUser(mapped)
     if (session?.expires_at) {
       setSessionExpiry(new Date(session.expires_at * 1000))
       setIsSessionExpired(false)
@@ -77,9 +97,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true
 
     // Load the current session on mount.
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      await applySession(session)
       if (!mounted) return
-      applySession(session)
       setIsLoading(false)
     })
 
@@ -87,9 +107,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return
-      applySession(session)
-      setIsLoading(false)
+      if (!mounted || suppressAuthEventsRef.current) return
+      void applySession(session).then(() => {
+        if (mounted) setIsLoading(false)
+      })
     })
 
     return () => {
@@ -104,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to refresh session:", error?.message)
       return false
     }
-    applySession(data.session)
+    await applySession(data.session)
     return true
   }, [supabase, applySession])
 
@@ -121,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("capiv_just_signed_up")
     }
-    applySession(data.session)
+    await applySession(data.session)
     void logActivity({
       action: "User signed in",
       category: "auth",
@@ -132,9 +153,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminLogin = async (email: string, password: string, secretKey: string): Promise<boolean> => {
     setIsLoading(true)
+    // Hold back auth events until the secret key is verified so the account is
+    // never briefly exposed without (or with) the admin role.
+    suppressAuthEventsRef.current = true
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error || !data.session) {
+      suppressAuthEventsRef.current = false
       setIsLoading(false)
       return false
     }
@@ -156,15 +181,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!verified) {
       await supabase.auth.signOut()
+      suppressAuthEventsRef.current = false
       setIsLoading(false)
       return false
     }
 
-    setIsLoading(false)
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("capiv_just_signed_up")
     }
-    applySession(data.session)
+    await applySession(data.session)
+    suppressAuthEventsRef.current = false
+    setIsLoading(false)
     void logActivity({
       action: "Admin signed in",
       category: "auth",
@@ -228,6 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     // Log before clearing state so user_id is still available.
     void logActivity({ action: "User signed out", category: "auth" })
+    void fetch("/api/auth/admin-verify", { method: "DELETE" }).catch(() => {})
     supabase.auth.signOut()
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("capiv_just_signed_up")

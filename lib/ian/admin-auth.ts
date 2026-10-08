@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { hasAdminSession } from "@/lib/admin-session"
 
 // Mirrors the admin check in app/api/admin/activity/route.ts so the IAN
 // admin surface uses the exact same authorization pattern as the rest of
@@ -26,7 +27,7 @@ export async function requireIanAdmin(
   }
 
   const role = user.user_metadata?.role as string | undefined
-  if (role !== "admin") {
+  if (role !== "admin" || !hasAdminSession(req, user.id)) {
     return NextResponse.json({ error: "Forbidden — admin only" }, { status: 403 })
   }
 
