@@ -11,6 +11,8 @@ import { useRouter } from "next/navigation"
 import { Users, Building2, Shield, BarChart3, Layers3, RefreshCw, Briefcase } from "lucide-react"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { useAuth } from "@/hooks/use-auth"
+import { DashboardUnlockSections } from "@/components/dashboard-unlock-sections"
+import { SHOW_LEGACY_DASHBOARD } from "@/lib/dashboard-config"
 
 export default function Home() {
   const router = useRouter()
@@ -149,6 +151,9 @@ export default function Home() {
                 </Button>
               </div>
 
+              {!SHOW_LEGACY_DASHBOARD && <DashboardUnlockSections />}
+
+              {SHOW_LEGACY_DASHBOARD && (<>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                 {quickStats.map((stat) => (
                   <Card key={stat.label} className="bg-slate-800 border-slate-700 p-6">
@@ -331,6 +336,7 @@ export default function Home() {
                   </Card>
                 </div>
               </div>
+              </>)}
             </div>
          </DashboardShell>
         </VerificationGate>
