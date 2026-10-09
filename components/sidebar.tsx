@@ -74,7 +74,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-1">
-        {menuItems.filter((item) => !item.hidden && (!item.capability || can(item.capability))).map((item) => {
+        {menuItems.filter((item) => (!item.hidden || isAdmin) && (!item.capability || can(item.capability))).map((item) => {
           const isActive = pathname === item.href
 
           return (
