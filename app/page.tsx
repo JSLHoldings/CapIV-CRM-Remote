@@ -10,9 +10,14 @@ import { VerificationGate } from "@/components/verification-gate"
 import { useRouter } from "next/navigation"
 import { Users, Building2, Shield, BarChart3, Layers3, RefreshCw, Briefcase } from "lucide-react"
 import { DashboardShell } from "@/components/dashboard-shell"
+import { useAuth } from "@/hooks/use-auth"
+import { DashboardUnlockSections } from "@/components/dashboard-unlock-sections"
+import { SHOW_LEGACY_DASHBOARD } from "@/lib/dashboard-config"
 
 export default function Home() {
   const router = useRouter()
+  const { user } = useAuth()
+  const firstName = user?.name?.split(" ")[0] || user?.email?.split("@")[0] || "there"
   const [capitalAmount, setCapitalAmount] = useState("")
   const [timePeriod, setTimePeriod] = useState("")
   const [annualRate, setAnnualRate] = useState("")
@@ -29,7 +34,7 @@ export default function Home() {
 
   const productModules = [
     {
-      title: "CapIV™ Core",
+      title: "JSL Tech™ Core",
       subtitle: "Deal Intelligence Hub",
       description: "Orchestrate mandates, track partner velocity, and activate AI curation.",
       href: "/core",
@@ -45,7 +50,7 @@ export default function Home() {
       status: "Live",
     },
     {
-      title: "CapIV IQ",
+      title: "JSL Tech IQ",
       subtitle: "Compliance Fabric",
       description: "Govern NDAs, Persona AML, and underwriting diagnostics from one command lane.",
       href: "/capiv-iq",
@@ -69,7 +74,7 @@ export default function Home() {
       status: "Live",
     },
     {
-      title: "CapIV EQ",
+      title: "JSL Tech EQ",
       subtitle: "Performance Lens",
       description: "Monitor portfolio KPIs and run ROI/IRR calculators inside the same workspace.",
       href: "/capiv-eq",
@@ -87,8 +92,8 @@ export default function Home() {
   const quickActions = [
     { label: "Submit New Deal", href: "/deals" },
     { label: "Invite a Capital Partner", href: "/matchmaking" },
-    { label: "Open CapIV IQ", href: "/capiv-iq" },
-    { label: "Jump to CapIV™ Access", href: "/access" },
+    { label: "Open JSL Tech IQ", href: "/capiv-iq" },
+    { label: "Jump to JSL Tech™ Access", href: "/access" },
   ]
 
   const calculateROI = () => {
@@ -127,13 +132,28 @@ export default function Home() {
         <DashboardShell>
           <div className="max-w-7xl mx-auto px-8 py-10 space-y-10">
               <div className="rounded-3xl border border-blue-500/20 bg-gradient-to-r from-blue-600/40 via-slate-900 to-slate-900 p-10 shadow-2xl">
-                <p className="text-sm uppercase tracking-[0.3em] text-blue-200/80 mb-4">CapIV™ Command</p>
-                <h1 className="text-4xl font-bold text-white mb-2">Activate Your Intelligent Private Markets Stack</h1>
-                <p className="text-lg text-slate-200 max-w-2xl">
-                  Review live mandates, navigate data rooms, and deploy capital across Core, Access, and CapIV IQ.
+                <p className="text-sm uppercase tracking-[0.3em] text-blue-200/80 mb-4">JSL Tech™ Command</p>
+                <h1 className="text-4xl font-bold text-white mb-2">Welcome, {firstName}.</h1>
+                <p className="text-lg text-slate-200 max-w-2xl mb-4">Your next connection starts here.</p>
+                <p className="text-base text-slate-300 max-w-2xl leading-relaxed">
+                  Discover IAN — the Intelligence &amp; Access Network, a JSL Tech platform bringing opportunities,
+                  deal flow and capital partners into alignment.
                 </p>
+                <p className="text-base text-slate-300 max-w-2xl leading-relaxed mt-3">
+                  Meaningful relationships begin with understanding who you are, what you&apos;re looking for and
+                  where you are. Create your profile to share your expertise, interests and goals.
+                </p>
+                <Button
+                  onClick={() => handleNavigate("/ian/profile")}
+                  className="mt-6 bg-blue-600 hover:bg-blue-500 text-white font-semibold"
+                >
+                  Create My Profile
+                </Button>
               </div>
 
+              {!SHOW_LEGACY_DASHBOARD && <DashboardUnlockSections />}
+
+              {SHOW_LEGACY_DASHBOARD && (<>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                 {quickStats.map((stat) => (
                   <Card key={stat.label} className="bg-slate-800 border-slate-700 p-6">
@@ -316,6 +336,7 @@ export default function Home() {
                   </Card>
                 </div>
               </div>
+              </>)}
             </div>
          </DashboardShell>
         </VerificationGate>

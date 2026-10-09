@@ -7,8 +7,18 @@ import { useAuth } from "@/hooks/use-auth"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
+import { useFeatureAccess } from "@/hooks/use-feature-access"
+import type { IanCapability } from "@/lib/ian/capabilities"
 
-export function Sidebar() {
+interface SidebarProps {
+  /** Extra classes to control visibility/positioning (desktop rail vs. mobile drawer). */
+  className?: string
+  /** Called when a nav link is tapped — used to close the mobile drawer. */
+  onNavigate?: () => void
+}
+
+export function Sidebar({ className, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const { user, logout } = useAuth()
   const [debugMode, setDebugMode] = useState(false)
@@ -25,22 +35,35 @@ export function Sidebar() {
     return () => clearInterval(interval)
   }, [])
 
-  const menuItems = [
+  const isAdmin = user?.role === "admin"
+  const { can } = useFeatureAccess()
+
+  const menuItems: {
+    id: string
+    label: string
+    href: string
+    hidden?: boolean
+    isAdmin?: boolean
+    capability?: IanCapability
+  }[] = [
     { id: "dashboard", label: "Dashboard", href: "/" },
-    { id: "core", label: "CapIV Core", href: "/core" },
-    { id: "access", label: "CapIV Access", href: "/access" },
-    { id: "deals", label: "Deal Source", href: "/deals" },
-    { id: "capiv-iq", label: "CapIV IQ", href: "/capiv-iq" },
-    { id: "capiv-eq", label: "CapIV EQ", href: "/capiv-eq" },
+    { id: "core", label: "JSL Tech Core", href: "/core", hidden: true },
+    { id: "access", label: "JSL Tech Access", href: "/access", capability: "browse_people_or_opportunities" },
+    { id: "deals", label: "Deal Source", href: "/deals", capability: "submit_formal_deals" },
+    { id: "capiv-iq", label: "JSL Tech IQ", href: "/capiv-iq", capability: "diligence_and_underwriting" },
+    { id: "capiv-eq", label: "JSL Tech EQ", href: "/capiv-eq", hidden: true },
     { id: "account", label: "Account", href: "/account" },
-    { id: "admin", label: "Admin", href: "/admin", isAdmin: true },
+    { id: "ian-profile", label: "My IAN Profile", href: "/ian/profile" },
+    // Admin console is only shown to users with the admin role.
+    ...(isAdmin ? [{ id: "admin", label: "Admin", href: "/admin", isAdmin: true }] : []),
+    ...(isAdmin ? [{ id: "ian-admin", label: "IAN Review", href: "/admin/ian", isAdmin: true }] : []),
   ]
 
   return (
-    <div className="w-64 bg-slate-950 text-slate-100 border-r border-slate-800 flex flex-col">
+    <div className={cn("w-64 bg-slate-950 text-slate-100 border-r border-slate-800 flex flex-col", className)}>
       <div className="px-6 py-5 border-b border-slate-800">
         <div className="flex items-center justify-between">
-          <h1 className="text-base font-semibold tracking-[0.3em] text-blue-200 uppercase">CapIV</h1>
+          <h1 className="text-base font-semibold tracking-[0.3em] text-blue-200 uppercase">I.A.N - JSL Tech</h1>
           {debugMode && (
             <Badge variant="destructive" className="text-xs bg-red-600/80 text-white border-none">
               DEBUG
@@ -51,22 +74,22 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-1">
-        {menuItems.map((item) => {
+        {menuItems.filter((item) => (!item.hidden || isAdmin) && (!item.capability || can(item.capability))).map((item) => {
           const isActive = pathname === item.href
 
           return (
-            <Link key={item.id} href={item.href}>
+            <Link key={item.id} href={item.href} onClick={onNavigate}>
               <Button
                 variant="ghost"
                 className={`w-full justify-start rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-blue-600 text-white hover:bg-blue-500"
                     : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                } ${item.isAdmin ? "border border-red-500/40" : ""}`}
+                } ${item.isAdmin ? "border border-blue-500/40" : ""}`}
               >
                 {item.label}
                 {item.isAdmin && (
-                  <Badge className="ml-auto text-[10px] bg-red-500/20 text-red-200 border-red-500/40">DEV</Badge>
+                  <Badge className="ml-auto text-[10px] bg-blue-500/20 text-blue-200 border-blue-500/40">ADMIN</Badge>
                 )}
               </Button>
             </Link>

@@ -13,7 +13,8 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from "next/navigation"
-import { Eye, CheckCircle, XCircle, Clock, FileText } from "lucide-react"
+import { Eye, CheckCircle, XCircle, Clock, FileText, Activity } from "lucide-react"
+import { AdminActivityLog } from "@/components/admin-activity-log"
 
 export function AdminDebugPanel() {
   const { user, login, logout } = useAuth()
@@ -81,7 +82,7 @@ export function AdminDebugPanel() {
   }
 
   const handleMockLogin = () => {
-    login(mockUser.email, "password", mockUser.accountType)
+    login(mockUser.email, "password")
     console.log("[v0] Mock user logged in:", mockUser)
   }
 
@@ -120,9 +121,9 @@ export function AdminDebugPanel() {
       },
     }
 
-    verification.completeNDA(mockData.ndaSignature)
+    verification.signNDA(mockData.ndaSignature, "")
     verification.completeKYC(mockData.kycInquiryId)
-    verification.completeCompanyInfo(mockData.companyInfo)
+    verification.submitCompanyInfo(mockData.companyInfo as unknown as Parameters<typeof verification.submitCompanyInfo>[0])
     console.log("[v0] Verification completed with mock data")
   }
 
@@ -193,7 +194,7 @@ export function AdminDebugPanel() {
       </div>
 
       <Tabs defaultValue="controls" className="w-full space-y-6">
-        <TabsList className="grid w-full grid-cols-5 rounded-2xl border border-slate-800 bg-slate-950/60 p-1">
+        <TabsList className="grid w-full grid-cols-6 rounded-2xl border border-slate-800 bg-slate-950/60 p-1">
           <TabsTrigger value="controls" className="rounded-xl data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             Controls
           </TabsTrigger>
@@ -208,6 +209,10 @@ export function AdminDebugPanel() {
           </TabsTrigger>
           <TabsTrigger value="om-review" className="rounded-xl data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             OM Review
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="rounded-xl data-[state=active]:bg-blue-600 data-[state=active]:text-white flex items-center gap-1.5">
+            <Activity className="w-3.5 h-3.5" />
+            Activity
           </TabsTrigger>
         </TabsList>
 
@@ -266,19 +271,19 @@ export function AdminDebugPanel() {
                   Dashboard
                 </Button>
                 <Button onClick={() => router.push("/core")} variant="secondary" size="sm">
-                  CapIV Core
+                  JSL Tech Core
                 </Button>
                 <Button onClick={() => router.push("/access")} variant="secondary" size="sm">
-                  CapIV Access
+                  JSL Tech Access
                 </Button>
                 <Button onClick={() => router.push("/deals")} variant="secondary" size="sm">
                   All Deals
                 </Button>
                 <Button onClick={() => router.push("/capiv-iq")} variant="secondary" size="sm">
-                  CapIV IQ
+                  JSL Tech IQ
                 </Button>
                 <Button onClick={() => router.push("/capiv-eq")} variant="secondary" size="sm">
-                  CapIV EQ
+                  JSL Tech EQ
                 </Button>
                 <Button onClick={() => router.push("/account")} variant="secondary" size="sm">
                   Account
@@ -462,8 +467,6 @@ export function AdminDebugPanel() {
                       {
                         currentStep: verification.currentStep,
                         ndaSigned: verification.ndaSigned,
-                        ndaSignature: verification.ndaSignature,
-                        ndaDate: verification.ndaDate,
                         kycCompleted: verification.kycCompleted,
                         kycInquiryId: verification.kycInquiryId,
                         companyInfo: verification.companyInfo,
@@ -607,6 +610,10 @@ export function AdminDebugPanel() {
             )}
           </CardContent>
         </Card>
+        </TabsContent>
+
+        <TabsContent value="activity">
+          <AdminActivityLog />
         </TabsContent>
       </Tabs>
     </div>
