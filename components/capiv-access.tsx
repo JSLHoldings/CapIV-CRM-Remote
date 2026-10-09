@@ -8,8 +8,11 @@ import {
   UserPlus, 
   RefreshCw, 
   FileText, 
-  BarChart3 
+  BarChart3,
+  Lock
 } from "lucide-react"
+import { useFeatureAccess } from "@/hooks/use-feature-access"
+import { FEATURE_ROUTES } from "@/lib/ian/capabilities"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
@@ -73,6 +76,15 @@ const actionButtons = [
 
 export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
   const router = useRouter()
+  const { can, isAdmin, isLoading } = useFeatureAccess()
+
+  // Default deny: unavailable while loading, and for routes no grant unlocks.
+  const isAvailable = (href: string) => {
+    if (isLoading) return false
+    if (isAdmin) return true
+    const feature = FEATURE_ROUTES.find((f) => f.prefixes.some((p) => href === p || href.startsWith(`${p}/`)))
+    return feature ? can(feature.capability) : false
+  }
 
   const handleCardClick = (href: string) => {
     router.push(href)
@@ -87,19 +99,32 @@ export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
       <div className="max-w-6xl mx-auto">
         {/* Feature Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          {featureCards.map((card, index) => (
+          {featureCards.map((card, index) => {
+            const available = isAvailable(card.href)
+            return (
             <Card 
               key={index}
-              className="bg-slate-800 border-slate-700 p-6 rounded-lg hover:bg-slate-750 transition-colors cursor-pointer"
-              onClick={() => handleCardClick(card.href)}
+              aria-disabled={!available}
+              className={
+                available
+                  ? "bg-slate-800 border-slate-700 p-6 rounded-lg hover:bg-slate-750 transition-colors cursor-pointer"
+                  : "bg-slate-800 border-slate-700 p-6 rounded-lg opacity-40 grayscale pointer-events-none select-none"
+              }
+              onClick={available ? () => handleCardClick(card.href) : undefined}
             >
               <div className="flex items-start space-x-4">
                 <div className="flex-shrink-0">
                   <card.icon className="w-8 h-8 text-blue-400" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-bold text-white mb-1">
+                  <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
                     {card.title}
+                    {!available && (
+                      <>
+                        <Lock className="w-4 h-4 text-gray-400" aria-hidden="true" />
+                        <span className="sr-only">Locked. Not yet approved for your account.</span>
+                      </>
+                    )}
                   </h3>
                   <p className="text-blue-400 text-sm font-medium mb-3">
                     {card.subtitle}
@@ -110,7 +135,8 @@ export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
                 </div>
               </div>
             </Card>
-          ))}
+            )
+          })}
         </div>
 
         {/* Action Buttons */}
@@ -119,7 +145,8 @@ export function CapIVAccess({ selectedDeal, onDealSelect }: CapIVAccessProps) {
             <Button 
               key={index}
               variant="outline" 
-              className="bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600 hover:text-white"
+              className="bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+              disabled={!isAvailable(button.href)}
               onClick={() => handleButtonClick(button.href)}
             >
               {button.text}

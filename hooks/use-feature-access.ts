@@ -16,6 +16,7 @@ export function useFeatureAccess() {
   const { data, isLoading } = useSWR("/api/ian/me/capabilities", fetcher, { revalidateOnFocus: true })
   return {
     isLoading,
+    isAdmin: data?.isAdmin === true,
     can: (capability: IanCapability) => data?.capabilities?.[capability] === true,
   }
 }
