@@ -61,11 +61,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     ? [
         { id: "ci-roadmap", label: "Roadmap", href: "/capital-intelligence/roadmap", isAdmin: true },
         { id: "ci-decisions", label: "Decisions Log", href: "/capital-intelligence/decisions", isAdmin: true },
-        { id: "ci-sources", label: "Source Register", href: "/capital-intelligence/sources", isAdmin: true },
-        { id: "ci-discovery", label: "Market Discovery", href: "/capital-intelligence/discovery", isAdmin: true },
-        { id: "ci-compliance", label: "Compliance Register", href: "/capital-intelligence/compliance", isAdmin: true },
-        { id: "ci-release", label: "Release Gate", href: "/capital-intelligence/release-gate", isAdmin: true },
-        { id: "ci-metrics", label: "Pilot Metrics", href: "/capital-intelligence/pilot-metrics", isAdmin: true },
+
       ]
     : []),
   ]
