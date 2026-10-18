@@ -57,6 +57,17 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     // Admin console is only shown to users with the admin role.
     ...(isAdmin ? [{ id: "admin", label: "Admin", href: "/admin", isAdmin: true }] : []),
     ...(isAdmin ? [{ id: "ian-admin", label: "IAN Review", href: "/admin/ian", isAdmin: true }] : []),
+  ...(isAdmin
+    ? [
+        { id: "ci-roadmap", label: "Roadmap", href: "/capital-intelligence/roadmap", isAdmin: true },
+        { id: "ci-decisions", label: "Decisions Log", href: "/capital-intelligence/decisions", isAdmin: true },
+        { id: "ci-sources", label: "Source Register", href: "/capital-intelligence/sources", isAdmin: true },
+        { id: "ci-discovery", label: "Market Discovery", href: "/capital-intelligence/discovery", isAdmin: true },
+        { id: "ci-compliance", label: "Compliance Register", href: "/capital-intelligence/compliance", isAdmin: true },
+        { id: "ci-release", label: "Release Gate", href: "/capital-intelligence/release-gate", isAdmin: true },
+        { id: "ci-metrics", label: "Pilot Metrics", href: "/capital-intelligence/pilot-metrics", isAdmin: true },
+      ]
+    : []),
   ]
 
   return (
