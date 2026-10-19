@@ -6,6 +6,7 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
+    "test:readiness": "node scripts/run-readiness-tests.mjs",
     "start": "next start"
   },
   "dependencies": {
