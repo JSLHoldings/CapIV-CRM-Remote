@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge"
 import { AdminDebugPanel } from "@/components/admin-debug-panel"
+import { AdminFeatureLinks } from "@/components/admin-feature-links"
 import { ProtectedRoute } from "@/components/protected-route"
 import { DashboardShell } from "@/components/dashboard-shell"
 import { ShieldCheck, Zap, Layers } from "lucide-react"
@@ -24,7 +25,7 @@ export default function AdminDashboard() {
   ]
 
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requireAdmin>
       <DashboardShell>
         <div className="px-8 py-10">
           <div className="mx-auto max-w-6xl space-y-10">
@@ -60,6 +61,8 @@ export default function AdminDashboard() {
                 )
               })}
             </div>
+
+            <AdminFeatureLinks />
 
             <AdminDebugPanel />
           </div>

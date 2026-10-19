@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
 import { SessionWarning } from "@/components/session-warning"
+import { AuthFooter } from "@/components/auth-footer"
 import { VerificationProvider } from "@/contexts/verification-context"
 
 export const metadata: Metadata = {
@@ -19,11 +20,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} bg-slate-950 text-slate-100`}>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} bg-slate-950 text-slate-100`} suppressHydrationWarning>
         <AuthProvider>
           <VerificationProvider>
             {children}
+            <AuthFooter />
             <SessionWarning />
           </VerificationProvider>
         </AuthProvider>

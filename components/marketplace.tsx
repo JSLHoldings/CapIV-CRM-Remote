@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Plus, Mail, Phone, Globe, MapPin } from "lucide-react"
-import { SearchFilters } from "@/components/search-filters"
+import { SearchFilters, type FilterOptions } from "@/components/search-filters"
 import { tabs } from "@/constants/tabs"
 
 interface Contact {
@@ -40,7 +40,7 @@ export function Marketplace() {
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState("Current")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<FilterOptions>({
     status: [],
     assetType: [],
     location: [],
