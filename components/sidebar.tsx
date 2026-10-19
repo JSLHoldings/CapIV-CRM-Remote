@@ -61,7 +61,8 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     ? [
         { id: "ci-roadmap", label: "Roadmap", href: "/capital-intelligence/roadmap", isAdmin: true },
         { id: "ci-decisions", label: "Decisions Log", href: "/capital-intelligence/decisions", isAdmin: true },
-
+        { id: "ian-checklist", label: "Owner Checklist", href: "/admin/ian/checklist", isAdmin: true },
+        { id: "readiness", label: "Readiness", href: "/readiness", isAdmin: true },
       ]
     : []),
   ]
